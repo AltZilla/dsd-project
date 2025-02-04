@@ -104,7 +104,7 @@ export default async function handler(req, res) {
             // Convert the entry timestamp to IST and extract the hour.
             const istHour = Number(
               new Date(entry.timestamp)
-                .toLocaleString("en-US", { timeZone: "Asia/Kolkata", hour: "2-digit", hour12: false })
+                .toLocaleString("en-US", { hour: "2-digit", hour12: false })
             );
             return istHour === hr;
           });
