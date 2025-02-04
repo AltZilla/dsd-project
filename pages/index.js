@@ -26,16 +26,6 @@ export default function Home() {
   // For theming (dark/light mode)
   const [darkMode, setDarkMode] = useState(false);
 
-  // For client-only rendering of time (avoid server/client mismatch)
-  const [mounted, setMounted] = useState(false);
-  const [clientTimeZone, setClientTimeZone] = useState('UTC');
-
-  // When mounted, record client timezone.
-  useEffect(() => {
-    setMounted(true);
-    setClientTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
-  }, []);
-
   // Reference to the chart instance (used for click handling in daily view)
   const chartRef = useRef(null);
 
@@ -112,7 +102,7 @@ export default function Home() {
           hour: '2-digit',
           minute: '2-digit',
           hour12: true,
-          timeZone: clientTimeZone
+          timeZone: "Asia/Kolkata"
         });
       }),
       datasets: [
@@ -144,15 +134,13 @@ export default function Home() {
     // Hour-level detailed view: one bar per record.
     chartData = {
       labels: detailedData.map(d =>
-        mounted
-          ? new Date(d.timestamp).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-              hour12: true,
-              timeZone: clientTimeZone
-            })
-          : ''
+        new Date(d.timestamp).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+          timeZone: "Asia/Kolkata"
+        })
       ),
       datasets: [
         {
@@ -187,15 +175,13 @@ export default function Home() {
             <div className="flex flex-col space-y-1">
               <div className="text-sm text-gray-500 dark:text-gray-300">
                 Last updated:{" "}
-                {mounted
-                  ? lastUpdated.toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      second: "2-digit",
-                      hour12: true,
-                      timeZone: clientTimeZone,
-                    })
-                  : "Loading..."}
+                {lastUpdated.toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                  hour12: true,
+                  timeZone: "Asia/Kolkata"
+                })}
               </div>
               <div className="flex items-center space-x-4">
                 <div className="flex flex-col">
