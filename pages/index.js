@@ -105,10 +105,15 @@ export default function Home() {
     // Daily aggregated view: one bar per hour.
     chartData = {
       labels: aggregatedData.map(d => {
-        const hour = d.hour;
-        const hour12 = (hour % 12) || 12;
-        const ampm = hour >= 12 ? 'pm' : 'am';
-        return `${hour12}:00 ${ampm}`;
+        // Create a Date object for the selected day at the given hour.
+        const hourDate = new Date(selectedDate);
+        hourDate.setHours(d.hour, 0, 0, 0);
+        return hourDate.toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+          timeZone: clientTimeZone
+        });
       }),
       datasets: [
         {
@@ -139,7 +144,6 @@ export default function Home() {
     // Hour-level detailed view: one bar per record.
     chartData = {
       labels: detailedData.map(d =>
-        // Render time only after mount to use the clientTimeZone.
         mounted
           ? new Date(d.timestamp).toLocaleTimeString([], {
               hour: '2-digit',
