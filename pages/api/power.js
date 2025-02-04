@@ -68,11 +68,11 @@ export default async function handler(req, res) {
           .sort({ timestamp: 1 })
           .toArray();
 
-        // You can compute recent/avg10 from these records if needed.
-        let recent = 0;
+        // Compute recent reading and 10-minute average as before.
         const lastEntry = await db
           .collection('power')
           .findOne({}, { sort: { timestamp: -1 } });
+        let recent = 0;
         if (lastEntry) {
           const diffSec = (new Date() - new Date(lastEntry.timestamp)) / 1000;
           if (diffSec < 10) recent = lastEntry.watts;
@@ -86,7 +86,7 @@ export default async function handler(req, res) {
 
         return res.status(200).json({ powerData, recent, avg10 });
       } else {
-        // Otherwise, return aggregated data for the day.
+        // Daily aggregated view: we want one value per hour (0 to 23) in IST.
         let dayStart = new Date(startDate);
         dayStart.setHours(0, 0, 0, 0);
         let dayEnd = new Date(dayStart);
@@ -97,12 +97,17 @@ export default async function handler(req, res) {
           .find({ timestamp: { $gte: dayStart, $lt: dayEnd } })
           .toArray();
 
-        // Aggregate data by hour (0 to 23)
+        // Aggregate data by hour in IST.
         const aggregatedData = [];
         for (let hr = 0; hr < 24; hr++) {
-          const records = allData.filter(
-            (entry) => new Date(entry.timestamp).getHours() === hr
-          );
+          const records = allData.filter(entry => {
+            // Convert the entry timestamp to IST and extract the hour.
+            const istHour = Number(
+              new Date(entry.timestamp)
+                .toLocaleString("en-US", { timeZone: "Asia/Kolkata", hour: "2-digit", hour12: false })
+            );
+            return istHour === hr;
+          });
           const avgWatts =
             records.length > 0
               ? records.reduce((sum, rec) => sum + rec.watts, 0) / records.length
@@ -111,17 +116,17 @@ export default async function handler(req, res) {
         }
 
         // Compute the recent reading (global) and 10-minute average.
-        let recent = 0;
         const lastEntry = await db
           .collection('power')
           .findOne({}, { sort: { timestamp: -1 } });
+        let recent = 0;
         if (lastEntry) {
           const diffSec = (new Date() - new Date(lastEntry.timestamp)) / 1000;
           if (diffSec < 10) recent = lastEntry.watts;
         }
         const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
         const recentEntries = allData.filter(
-          (entry) => new Date(entry.timestamp) >= tenMinsAgo
+          entry => new Date(entry.timestamp) >= tenMinsAgo
         );
         let avg10 = 0;
         if (recentEntries.length > 0) {

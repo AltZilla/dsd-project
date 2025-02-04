@@ -10,7 +10,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 
 export default function Home() {
   // Data states
-  const [aggregatedData, setAggregatedData] = useState([]); // Day-level aggregated view
+  const [aggregatedData, setAggregatedData] = useState([]); // Daily aggregated view
   const [detailedData, setDetailedData] = useState([]); // Hour-level detailed view
   const [recentPower, setRecentPower] = useState(0);
   const [avgPower10, setAvgPower10] = useState(0);
@@ -26,7 +26,7 @@ export default function Home() {
   // For theming (dark/light mode)
   const [darkMode, setDarkMode] = useState(false);
 
-  // Reference to the chart instance (used for click handling in daily view)
+  // Reference to the chart instance (for click handling in daily view)
   const chartRef = useRef(null);
 
   // Build date string "YYYY-MM-DD" from selectedDate.
@@ -84,7 +84,7 @@ export default function Home() {
     const updateFunc = selectedHour === null
       ? fetchDailyData
       : () => fetchHourlyData(selectedHour);
-    updateFunc(); // Initial call
+    updateFunc(); // initial call
     const interval = setInterval(updateFunc, 5000);
     return () => clearInterval(interval);
   }, [selectedDate, selectedHour]);
@@ -95,7 +95,7 @@ export default function Home() {
     // Daily aggregated view: one bar per hour.
     chartData = {
       labels: aggregatedData.map(d => {
-        // Create a Date object for the selected day at the given hour.
+        // Create a Date object for the selected day at the given IST hour.
         const hourDate = new Date(selectedDate);
         hourDate.setHours(d.hour, 0, 0, 0);
         return hourDate.toLocaleTimeString([], {
@@ -116,11 +116,9 @@ export default function Home() {
 
     chartOptions = {
       responsive: true,
-      // onClick is defined only in daily view.
       onClick: (event, elements) => {
         if (elements.length > 0) {
           const index = elements[0].index;
-          // Retrieve the hour corresponding to the clicked bar.
           const hour = aggregatedData[index].hour;
           setSelectedHour(hour);
         }
@@ -151,7 +149,6 @@ export default function Home() {
       ],
     };
 
-    // No onClick callback in the hourly view.
     chartOptions = {
       responsive: true,
       scales: {
@@ -161,7 +158,7 @@ export default function Home() {
     };
   }
 
-  // Circular meter settings (for current and 10-minute average power).
+  // Circular meter settings.
   const maxPowerValue = 5000;
   const percentRecent = Math.min((recentPower / maxPowerValue) * 100, 100);
   const percentAvg = Math.min((avgPower10 / maxPowerValue) * 100, 100);
@@ -170,7 +167,7 @@ export default function Home() {
     <div className={darkMode ? 'dark' : ''}>
       <div className="min-h-screen bg-gray-100 dark:bg-gray-800 transition-colors duration-500">
         <div className="container mx-auto p-4 space-y-8">
-          {/* Header with date picker, last updated indicator, and dark/light toggle */}
+          {/* Header */}
           <div className="flex flex-col md:flex-row md:justify-between md:items-center space-y-4 md:space-y-0">
             <div className="flex flex-col space-y-1">
               <div className="text-sm text-gray-500 dark:text-gray-300">
@@ -192,7 +189,7 @@ export default function Home() {
                     selected={selectedDate}
                     onChange={(date) => {
                       setSelectedDate(date);
-                      setSelectedHour(null); // Reset to daily view when date changes.
+                      setSelectedHour(null);
                     }}
                     dateFormat="yyyy/MM/dd"
                     className="p-2 rounded shadow border"
@@ -200,7 +197,6 @@ export default function Home() {
                 </div>
                 <button
                   onClick={() => {
-                    // Manual data reload.
                     if (selectedHour === null) {
                       fetchDailyData();
                     } else {
@@ -248,22 +244,12 @@ export default function Home() {
 
           {/* Circular Meters */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Current Power Meter */}
-            <Card
-              className="hover:shadow-lg transition-shadow duration-300"
-              title="Current Power Usage"
-            >
+            <Card className="hover:shadow-lg transition-shadow duration-300" title="Current Power Usage">
               <CardHeader>
                 <CardTitle>Current Power Usage</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col items-center justify-center space-y-4">
-                <div
-                  style={{
-                    width: 150,
-                    height: 150,
-                    transition: "all 0.5s ease-in-out",
-                  }}
-                >
+                <div style={{ width: 150, height: 150, transition: "all 0.5s ease-in-out" }}>
                   <CircularProgressbar
                     value={percentRecent}
                     text={`${recentPower ? recentPower.toFixed(0) : 0}W`}
@@ -281,22 +267,12 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            {/* 10-Minute Average Meter */}
-            <Card
-              className="hover:shadow-lg transition-shadow duration-300"
-              title="10-Minute Average Power"
-            >
+            <Card className="hover:shadow-lg transition-shadow duration-300" title="10-Minute Average Power">
               <CardHeader>
                 <CardTitle>10-Minute Average Power</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col items-center justify-center space-y-4">
-                <div
-                  style={{
-                    width: 150,
-                    height: 150,
-                    transition: "all 0.5s ease-in-out",
-                  }}
-                >
+                <div style={{ width: 150, height: 150, transition: "all 0.5s ease-in-out" }}>
                   <CircularProgressbar
                     value={percentAvg}
                     text={`${avgPower10 ? avgPower10.toFixed(0) : 0}W`}
@@ -315,7 +291,7 @@ export default function Home() {
             </Card>
           </div>
 
-          {/* Additional Visualization: Peak Power Card */}
+          {/* Peak Power Card */}
           <Card className="hover:shadow-lg transition-shadow duration-300" title="Peak Power Usage">
             <CardHeader>
               <CardTitle>Peak Power Usage</CardTitle>
