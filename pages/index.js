@@ -26,6 +26,16 @@ export default function Home() {
   // For theming (dark/light mode)
   const [darkMode, setDarkMode] = useState(false);
 
+  // For client-only rendering of time (avoid server/client mismatch)
+  const [mounted, setMounted] = useState(false);
+  const [clientTimeZone, setClientTimeZone] = useState('UTC');
+
+  // When mounted, record client timezone.
+  useEffect(() => {
+    setMounted(true);
+    setClientTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  }, []);
+
   // Reference to the chart instance (used for click handling in daily view)
   const chartRef = useRef(null);
 
@@ -129,12 +139,16 @@ export default function Home() {
     // Hour-level detailed view: one bar per record.
     chartData = {
       labels: detailedData.map(d =>
-        new Date(d.timestamp).toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: true  // Force 12-hour format
-        })
+        // Render time only after mount to use the clientTimeZone.
+        mounted
+          ? new Date(d.timestamp).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: true,
+              timeZone: clientTimeZone
+            })
+          : ''
       ),
       datasets: [
         {
@@ -168,12 +182,16 @@ export default function Home() {
           <div className="flex flex-col md:flex-row md:justify-between md:items-center space-y-4 md:space-y-0">
             <div className="flex flex-col space-y-1">
               <div className="text-sm text-gray-500 dark:text-gray-300">
-                Last updated: {lastUpdated.toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  second: '2-digit',
-                  hour12: true  // Force 12-hour format
-                })}
+                Last updated:{" "}
+                {mounted
+                  ? lastUpdated.toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      second: "2-digit",
+                      hour12: true,
+                      timeZone: clientTimeZone,
+                    })
+                  : "Loading..."}
               </div>
               <div className="flex items-center space-x-4">
                 <div className="flex flex-col">
@@ -219,7 +237,7 @@ export default function Home() {
                 onClick={() => setDarkMode(!darkMode)}
                 className="px-4 py-2 bg-blue-500 text-white rounded shadow hover:bg-blue-600 transition-colors"
               >
-                {darkMode ? 'Light Mode' : 'Dark Mode'}
+                {darkMode ? "Light Mode" : "Dark Mode"}
               </button>
             </div>
           </div>
@@ -229,7 +247,7 @@ export default function Home() {
             <CardHeader>
               <CardTitle>
                 {selectedHour === null
-                  ? 'Daily Power Usage (Averaged by Hour)'
+                  ? "Daily Power Usage (Averaged by Hour)"
                   : `Power Usage Details for ${selectedHour}:00`}
               </CardTitle>
             </CardHeader>
@@ -241,20 +259,29 @@ export default function Home() {
           {/* Circular Meters */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {/* Current Power Meter */}
-            <Card className="hover:shadow-lg transition-shadow duration-300" title="Current Power Usage">
+            <Card
+              className="hover:shadow-lg transition-shadow duration-300"
+              title="Current Power Usage"
+            >
               <CardHeader>
                 <CardTitle>Current Power Usage</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col items-center justify-center space-y-4">
-                <div style={{ width: 150, height: 150, transition: 'all 0.5s ease-in-out' }}>
+                <div
+                  style={{
+                    width: 150,
+                    height: 150,
+                    transition: "all 0.5s ease-in-out",
+                  }}
+                >
                   <CircularProgressbar
                     value={percentRecent}
                     text={`${recentPower ? recentPower.toFixed(0) : 0}W`}
                     styles={buildStyles({
-                      pathColor: '#f88',
-                      textColor: darkMode ? '#fff' : '#333',
-                      trailColor: darkMode ? '#555' : '#d6d6d6',
-                      transition: 'stroke-dashoffset 0.5s ease 0s',
+                      pathColor: "#f88",
+                      textColor: darkMode ? "#fff" : "#333",
+                      trailColor: darkMode ? "#555" : "#d6d6d6",
+                      transition: "stroke-dashoffset 0.5s ease 0s",
                     })}
                   />
                 </div>
@@ -265,20 +292,29 @@ export default function Home() {
             </Card>
 
             {/* 10-Minute Average Meter */}
-            <Card className="hover:shadow-lg transition-shadow duration-300" title="10-Minute Average Power">
+            <Card
+              className="hover:shadow-lg transition-shadow duration-300"
+              title="10-Minute Average Power"
+            >
               <CardHeader>
                 <CardTitle>10-Minute Average Power</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col items-center justify-center space-y-4">
-                <div style={{ width: 150, height: 150, transition: 'all 0.5s ease-in-out' }}>
+                <div
+                  style={{
+                    width: 150,
+                    height: 150,
+                    transition: "all 0.5s ease-in-out",
+                  }}
+                >
                   <CircularProgressbar
                     value={percentAvg}
                     text={`${avgPower10 ? avgPower10.toFixed(0) : 0}W`}
                     styles={buildStyles({
-                      pathColor: '#4caf50',
-                      textColor: darkMode ? '#fff' : '#333',
-                      trailColor: darkMode ? '#555' : '#d6d6d6',
-                      transition: 'stroke-dashoffset 0.5s ease 0s',
+                      pathColor: "#4caf50",
+                      textColor: darkMode ? "#fff" : "#333",
+                      trailColor: darkMode ? "#555" : "#d6d6d6",
+                      transition: "stroke-dashoffset 0.5s ease 0s",
                     })}
                   />
                 </div>
