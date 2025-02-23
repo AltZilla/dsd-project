@@ -1,6 +1,6 @@
 // pages/index.js
 import React, { useEffect, useState, useRef } from 'react';
-import { Bar } from 'react-chartjs-2';
+import { Line } from 'react-chartjs-2';
 import 'chart.js/auto';
 import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
 import 'react-circular-progressbar/dist/styles.css';
@@ -11,22 +11,12 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 export default function Home() {
   // Data states
   const [aggregatedData, setAggregatedData] = useState([]); // Daily aggregated view
-  const [detailedData, setDetailedData] = useState([]); // Hour-level detailed view
   const [recentPower, setRecentPower] = useState(0);
   const [avgPower10, setAvgPower10] = useState(0);
   const [peakPower, setPeakPower] = useState(0);
   const [lastUpdated, setLastUpdated] = useState(new Date());
-
-  // For one-day selection
   const [selectedDate, setSelectedDate] = useState(new Date());
-
-  // For hour-level view (if set, we are drilling down)
-  const [selectedHour, setSelectedHour] = useState(null);
-
-  // For theming (dark/light mode)
   const [darkMode, setDarkMode] = useState(false);
-
-  // Reference to the chart instance (for click handling in daily view)
   const chartRef = useRef(null);
 
   // Build date string "YYYY-MM-DD" from selectedDate.
@@ -58,105 +48,30 @@ export default function Home() {
     }
   };
 
-  // Fetch detailed data for a specific hour.
-  const fetchHourlyData = async (hour) => {
-    const dateStr = getDateString(selectedDate);
-    const res = await fetch(`/api/power?date=${dateStr}&hour=${hour}`);
-    const data = await res.json();
-    if (data.powerData) {
-      setDetailedData(data.powerData);
-    }
-    setRecentPower(data.recent);
-    setAvgPower10(data.avg10);
-    setLastUpdated(new Date());
-
-    // Compute peak power from detailed records.
-    if (data.powerData && data.powerData.length) {
-      const peak = Math.max(...data.powerData.map(d => d.watts));
-      setPeakPower(peak);
-    } else {
-      setPeakPower(0);
-    }
-  };
-
   // Auto-update every 5 seconds.
   useEffect(() => {
-    const updateFunc = selectedHour === null
-      ? fetchDailyData
-      : () => fetchHourlyData(selectedHour);
-    updateFunc(); // initial call
-    const interval = setInterval(updateFunc, 5000);
+    fetchDailyData();
+    const interval = setInterval(fetchDailyData, 5000);
     return () => clearInterval(interval);
-  }, [selectedDate, selectedHour]);
+  }, [selectedDate]);
 
-  // Build chart data and options.
-  let chartData, chartOptions;
-  if (selectedHour === null) {
-    // Daily aggregated view: one bar per hour.
-    chartData = {
-      labels: aggregatedData.map(d => {
-        // Create a Date object for the selected day at the given IST hour.
-        const hourDate = new Date(selectedDate);
-        hourDate.setHours(d.hour, 0, 0, 0);
-        return hourDate.toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-          timeZone: "Asia/Kolkata"
-        });
-      }),
-      datasets: [
-        {
-          label: 'Avg Power (W)',
-          data: aggregatedData.map(d => parseFloat(d.avgWatts.toFixed(2))),
-          backgroundColor: darkMode ? '#4fd1c5' : 'rgb(75, 192, 192)',
-        },
-      ],
-    };
+  // Build chart data and options for the daily aggregated view.
+  const chartData = {
+    labels: aggregatedData.map(d => `${d.hour}:00`),
+    datasets: [{
+      label: 'Avg Power (W)',
+      data: aggregatedData.map(d => parseFloat(d.avgWatts.toFixed(2))),
+      borderColor: darkMode ? '#4fd1c5' : 'rgb(75, 192, 192)',
+      backgroundColor: 'transparent',
+      tension: 0.3,
+    }],
+  };
 
-    chartOptions = {
-      responsive: true,
-      onClick: (event, elements) => {
-        if (elements.length > 0) {
-          const index = elements[0].index;
-          const hour = aggregatedData[index].hour;
-          setSelectedHour(hour);
-        }
-      },
-      scales: {
-        y: { beginAtZero: true },
-      },
-      animation: { duration: 1000 },
-    };
-  } else {
-    // Hour-level detailed view: one bar per record.
-    chartData = {
-      labels: detailedData.map(d =>
-        new Date(d.timestamp).toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: true,
-          timeZone: "Asia/Kolkata"
-        })
-      ),
-      datasets: [
-        {
-          label: `Power Usage for ${selectedHour}:00`,
-          data: detailedData.map(d => d.watts),
-          backgroundColor: darkMode ? '#f6ad55' : 'rgb(255, 159, 64)',
-        },
-      ],
-    };
-
-    chartOptions = {
-      responsive: true,
-      scales: {
-        y: { beginAtZero: true },
-      },
-      animation: { duration: 1000 },
-    };
-  }
+  const chartOptions = {
+    responsive: true,
+    scales: { y: { beginAtZero: true } },
+    animation: { duration: 1000 },
+  };
 
   // Circular meter settings.
   const maxPowerValue = 5000;
@@ -182,43 +97,24 @@ export default function Home() {
               </div>
               <div className="flex items-center space-x-4">
                 <div className="flex flex-col">
-                  <span className="text-sm text-gray-500 dark:text-gray-300">
-                    Select Date:
-                  </span>
+                  <span className="text-sm text-gray-500 dark:text-gray-300">Select Date:</span>
                   <DatePicker
                     selected={selectedDate}
-                    onChange={(date) => {
-                      setSelectedDate(date);
-                      setSelectedHour(null);
-                    }}
+                    onChange={(date) => setSelectedDate(date)}
                     dateFormat="yyyy/MM/dd"
                     className="p-2 rounded shadow border"
                   />
                 </div>
                 <button
-                  onClick={() => {
-                    if (selectedHour === null) {
-                      fetchDailyData();
-                    } else {
-                      fetchHourlyData(selectedHour);
-                    }
-                  }}
+                  onClick={fetchDailyData}
                   className="px-4 py-2 bg-blue-500 text-white rounded shadow hover:bg-blue-600 transition-colors"
-                  title="Load data for the selected date/hour"
+                  title="Load data for the selected date"
                 >
                   Load Data
                 </button>
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              {selectedHour !== null && (
-                <button
-                  onClick={() => setSelectedHour(null)}
-                  className="px-4 py-2 bg-green-500 text-white rounded shadow hover:bg-green-600 transition-colors"
-                >
-                  Back to Daily View
-                </button>
-              )}
               <button
                 onClick={() => setDarkMode(!darkMode)}
                 className="px-4 py-2 bg-blue-500 text-white rounded shadow hover:bg-blue-600 transition-colors"
@@ -228,17 +124,13 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Bar Chart Card */}
+          {/* Line Chart Card */}
           <Card className="hover:shadow-lg transition-shadow duration-300">
             <CardHeader>
-              <CardTitle>
-                {selectedHour === null
-                  ? "Daily Power Usage (Averaged by Hour)"
-                  : `Power Usage Details for ${selectedHour}:00`}
-              </CardTitle>
+              <CardTitle>Daily Power Usage</CardTitle>
             </CardHeader>
             <CardContent>
-              <Bar data={chartData} options={chartOptions} ref={chartRef} />
+              <Line data={chartData} options={chartOptions} ref={chartRef} />
             </CardContent>
           </Card>
 
