@@ -35,7 +35,14 @@ export default function Home() {
   }, [timeLimit]);
 
   // Build chart labels from the API's "label" property.
-  const chartLabels = aggregatedData.map(d => d.label);
+  const chartLabels = aggregatedData.map(d => {
+    const date = new Date(d.timestamp);
+    return date.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  });
 
   const chartData = {
     labels: chartLabels,

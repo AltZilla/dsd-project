@@ -46,32 +46,27 @@ export default async function handler(req, res) {
       // If a "limit" parameter is provided, do a rolling window aggregation.
       if (req.query.limit) {
         const limitHours = Number(req.query.limit);
-        // Get current IST time (by converting to "Asia/Kolkata" locale)
-        const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-        // Determine start time in IST: (now - limitHours)
-        const startTimeIST = new Date(nowIST.getTime() - limitHours * 3600000);
-        // Convert startTimeIST to UTC (timestamps are stored in UTC)
-        const startTimeUTC = new Date(startTimeIST.getTime() - 5.5 * 3600000);
-        
-        // Query all records with timestamp >= startTimeUTC
+        const now = new Date();
+        const startTime = new Date(now.getTime() - limitHours * 3600000);
+
+        // Query all records with timestamp >= startTime
         const records = await db.collection('power')
-          .find({ timestamp: { $gte: startTimeUTC } })
+          .find({ timestamp: { $gte: startTime } })
           .toArray();
 
-        // Group records by minute (based on IST time)
+        // Group records by minute
         const grouped = {};
         records.forEach(entry => {
-          const istTime = new Date(entry.timestamp.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-          // Use "HH:MM" as the key
-          const key = istTime.getHours().toString().padStart(2, '0') + ":" +
-                      istTime.getMinutes().toString().padStart(2, '0');
+          const date = new Date(entry.timestamp);
+          const key = date.getHours().toString().padStart(2, '0') + ":" +
+                      date.getMinutes().toString().padStart(2, '0');
           if (!grouped[key]) {
-            grouped[key] = { sum: 0, count: 0, timestamp: istTime };
+            grouped[key] = { sum: 0, count: 0, timestamp: date };
           }
           grouped[key].sum += entry.watts;
           grouped[key].count++;
         });
-        
+
         const aggregatedData = Object.keys(grouped)
           .map(key => ({
             label: key,
@@ -87,6 +82,7 @@ export default async function handler(req, res) {
           const diffSec = (new Date() - new Date(lastEntry.timestamp)) / 1000;
           if (diffSec < 10) recent = lastEntry.watts;
         }
+
         // Compute 10-minute average using records from the last 10 minutes
         const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
         const recentEntries = records.filter(entry => new Date(entry.timestamp) >= tenMinsAgo);
@@ -94,6 +90,7 @@ export default async function handler(req, res) {
         if (recentEntries.length > 0) {
           avg10 = recentEntries.reduce((sum, entry) => sum + entry.watts, 0) / recentEntries.length;
         }
+
         return res.status(200).json({ aggregatedData, recent, avg10 });
       } else {
         // Otherwise, use the existing daily aggregated view.
