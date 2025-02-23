@@ -10,12 +10,12 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 
 export default function Home() {
   // Data states
-  const [aggregatedData, setAggregatedData] = useState([]); // Daily aggregated view
+  const [aggregatedData, setAggregatedData] = useState([]); // Full day's aggregated view
   const [recentPower, setRecentPower] = useState(0);
   const [avgPower10, setAvgPower10] = useState(0);
-  const [peakPower, setPeakPower] = useState(0);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [timeLimit, setTimeLimit] = useState(24); // time limit in hours (default 24)
   const [darkMode, setDarkMode] = useState(false);
   const chartRef = useRef(null);
 
@@ -27,7 +27,7 @@ export default function Home() {
     return `${year}-${month}-${day}`;
   };
 
-  // Fetch daily aggregated data.
+  // Fetch daily aggregated data (API always returns the full day’s data)
   const fetchDailyData = async () => {
     const dateStr = getDateString(selectedDate);
     const res = await fetch(`/api/power?date=${dateStr}`);
@@ -38,14 +38,6 @@ export default function Home() {
     setRecentPower(data.recent);
     setAvgPower10(data.avg10);
     setLastUpdated(new Date());
-
-    // Compute peak power from aggregated data.
-    if (data.aggregatedData && data.aggregatedData.length) {
-      const peak = Math.max(...data.aggregatedData.map(d => d.avgWatts));
-      setPeakPower(peak);
-    } else {
-      setPeakPower(0);
-    }
   };
 
   // Auto-update every 5 seconds.
@@ -55,12 +47,24 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [selectedDate]);
 
-  // Build chart data and options for the daily aggregated view.
+  // Filter the full aggregatedData to get only the last 'timeLimit' hours.
+  const displayedData =
+    aggregatedData.length > timeLimit
+      ? aggregatedData.slice(-timeLimit)
+      : aggregatedData;
+
+  // Compute peak power from the displayed (limited) data.
+  const displayedPeak =
+    displayedData.length > 0
+      ? Math.max(...displayedData.map(d => d.avgWatts))
+      : 0;
+
+  // Build chart data and options for the limited daily aggregated view.
   const chartData = {
-    labels: aggregatedData.map(d => `${d.hour}:00`),
+    labels: displayedData.map(d => `${d.hour}:00`),
     datasets: [{
       label: 'Avg Power (W)',
-      data: aggregatedData.map(d => parseFloat(d.avgWatts.toFixed(2))),
+      data: displayedData.map(d => parseFloat(d.avgWatts.toFixed(2))),
       borderColor: darkMode ? '#4fd1c5' : 'rgb(75, 192, 192)',
       backgroundColor: 'transparent',
       tension: 0.3,
@@ -104,6 +108,19 @@ export default function Home() {
                     dateFormat="yyyy/MM/dd"
                     className="p-2 rounded shadow border"
                   />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-sm text-gray-500 dark:text-gray-300">Time Limit (hours):</span>
+                  <select
+                    value={timeLimit}
+                    onChange={(e) => setTimeLimit(Number(e.target.value))}
+                    className="p-2 rounded shadow border"
+                  >
+                    <option value={1}>Last 1 Hour</option>
+                    <option value={6}>Last 6 Hours</option>
+                    <option value={12}>Last 12 Hours</option>
+                    <option value={24}>Last 24 Hours</option>
+                  </select>
                 </div>
                 <button
                   onClick={fetchDailyData}
@@ -183,14 +200,14 @@ export default function Home() {
             </Card>
           </div>
 
-          {/* Peak Power Card */}
+          {/* Peak Power Card (computed from the limited data) */}
           <Card className="hover:shadow-lg transition-shadow duration-300" title="Peak Power Usage">
             <CardHeader>
               <CardTitle>Peak Power Usage</CardTitle>
             </CardHeader>
             <CardContent className="flex items-center justify-center">
               <div className="text-3xl font-bold text-red-600 dark:text-red-400">
-                {peakPower ? peakPower.toFixed(0) : 0}W
+                {displayedPeak ? displayedPeak.toFixed(0) : 0}W
               </div>
             </CardContent>
           </Card>
