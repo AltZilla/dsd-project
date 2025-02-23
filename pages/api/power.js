@@ -1,5 +1,8 @@
 import clientPromise from '@/lib/mongodb';
 
+let recent = 0;
+let recent_date = new Date();
+
 export default async function handler(req, res) {
   const client = await clientPromise;
   const db = client.db(); // adjust if you need a specific database name
@@ -12,6 +15,10 @@ export default async function handler(req, res) {
         watts: Number(watts),
         timestamp: now,
       };
+
+      // Update global recent variables
+      recent = Number(watts);
+      recent_date = now;
 
       // Check if the last entry is in the same minute
       const lastEntry = await db
@@ -76,12 +83,9 @@ export default async function handler(req, res) {
           .sort((a, b) => a.timestamp - b.timestamp);
 
         // Compute recent reading (if the last record was within 10 seconds)
-        let recent = 0;
-        if (records.length > 0) {
-          const lastEntry = records[records.length - 1];
-          const diffSec = (new Date() - new Date(lastEntry.timestamp)) / 1000;
-          if (diffSec < 10) recent = lastEntry.watts;
-        }
+        let recentPower = 0;
+        const diffSec = (new Date() - recent_date) / 1000;
+        if (diffSec < 10) recentPower = recent;
 
         // Compute 10-minute average using records from the last 10 minutes
         const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
@@ -91,7 +95,7 @@ export default async function handler(req, res) {
           avg10 = recentEntries.reduce((sum, entry) => sum + entry.watts, 0) / recentEntries.length;
         }
 
-        return res.status(200).json({ aggregatedData, recent, avg10 });
+        return res.status(200).json({ aggregatedData, recent: recentPower, avg10 });
       } else {
         // Otherwise, use the existing daily aggregated view.
         let { date, hour } = req.query;
@@ -119,18 +123,17 @@ export default async function handler(req, res) {
           const lastEntry = await db
             .collection('power')
             .findOne({}, { sort: { timestamp: -1 } });
-          let recent = 0;
-          if (lastEntry) {
-            const diffSec = (new Date() - new Date(lastEntry.timestamp)) / 1000;
-            if (diffSec < 10) recent = lastEntry.watts;
-          }
+          let recentPower = 0;
+          const diffSec = (new Date() - recent_date) / 1000;
+          if (diffSec < 10) recentPower = recent;
+
           const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
           const recentEntries = powerData.filter(entry => new Date(entry.timestamp) >= tenMinsAgo);
           let avg10 = 0;
           if (recentEntries.length > 0) {
             avg10 = recentEntries.reduce((sum, entry) => sum + entry.watts, 0) / recentEntries.length;
           }
-          return res.status(200).json({ powerData, recent, avg10 });
+          return res.status(200).json({ powerData, recent: recentPower, avg10 });
         } else {
           // Daily aggregated view (one value per hour in IST)
           let dayStart = new Date(startDate);
@@ -162,11 +165,10 @@ export default async function handler(req, res) {
           const lastEntry = await db
             .collection('power')
             .findOne({}, { sort: { timestamp: -1 } });
-          let recent = 0;
-          if (lastEntry) {
-            const diffSec = (new Date() - new Date(lastEntry.timestamp)) / 1000;
-            if (diffSec < 10) recent = lastEntry.watts;
-          }
+          let recentPower = 0;
+          const diffSec = (new Date() - recent_date) / 1000;
+          if (diffSec < 10) recentPower = recent;
+
           const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
           const recentEntries = allData.filter(
             entry => new Date(entry.timestamp) >= tenMinsAgo
@@ -175,7 +177,7 @@ export default async function handler(req, res) {
           if (recentEntries.length > 0) {
             avg10 = recentEntries.reduce((sum, entry) => sum + entry.watts, 0) / recentEntries.length;
           }
-          return res.status(200).json({ aggregatedData, recent, avg10 });
+          return res.status(200).json({ aggregatedData, recent: recentPower, avg10 });
         }
       }
     } catch (error) {
