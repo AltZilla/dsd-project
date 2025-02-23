@@ -14,6 +14,14 @@ export default function Home() {
   const [darkMode, setDarkMode] = useState(false);
   const chartRef = useRef(null);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const { Chart: ChartJS, registerables } = require('chart.js');
+      const zoomPlugin = require('chartjs-plugin-zoom');
+      ChartJS.register(...registerables, zoomPlugin);
+    }
+  }, []);
+
   // Fetch data using the rolling window approach.
   const fetchDailyData = async () => {
     try {
@@ -53,14 +61,56 @@ export default function Home() {
         borderColor: darkMode ? "#4fd1c5" : "rgb(75, 192, 192)",
         backgroundColor: "transparent",
         tension: 0.3,
+        pointRadius: 5,
+        pointHoverRadius: 7,
       },
     ],
   };
 
   const chartOptions = {
     responsive: true,
-    scales: { y: { beginAtZero: true } },
+    scales: {
+      y: { beginAtZero: true },
+      x: {
+        ticks: {
+          maxRotation: 45,
+          minRotation: 45,
+          callback: function(value, index, values) {
+            const date = new Date(aggregatedData[index].timestamp);
+            return date.toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+            });
+          }
+        }
+      }
+    },
     animation: { duration: 1000 },
+    plugins: {
+      zoom: {
+        pan: {
+          enabled: true,
+          mode: 'x',
+        },
+        zoom: {
+          wheel: {
+            enabled: true,
+          },
+          pinch: {
+            enabled: true,
+          },
+          mode: 'x',
+        },
+      },
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            return `Avg Power: ${context.raw} W`;
+          }
+        }
+      }
+    },
   };
 
   const displayedPeak = aggregatedData.length > 0 ? Math.max(...aggregatedData.map(d => d.avgWatts)) : 0;
