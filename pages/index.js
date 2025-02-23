@@ -6,6 +6,15 @@ import { CircularProgressbar, buildStyles } from "react-circular-progressbar";
 import "react-circular-progressbar/dist/styles.css";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
+// Helper to check if an hour is within a circular range (0–23)
+function inHourRange(hour, start, end) {
+  if (start <= end) {
+    return hour >= start && hour <= end;
+  } else {
+    return hour >= start || hour <= end;
+  }
+}
+
 export default function Home() {
   // Data states
   const [aggregatedData, setAggregatedData] = useState([]); // full day's data (API returns UTC hours)
@@ -16,11 +25,11 @@ export default function Home() {
   const [darkMode, setDarkMode] = useState(false);
   const chartRef = useRef(null);
 
-  // Helper: Get current IST time using Asia/Kolkata timezone.
+  // Get current IST time using Asia/Kolkata timezone.
   const getISTDate = () =>
     new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
 
-  // Build date string "YYYY-MM-DD" from current IST date.
+  // Build a date string "YYYY-MM-DD" from the current IST date.
   const getCurrentISTDateString = () => {
     const nowIST = getISTDate();
     const year = nowIST.getFullYear();
@@ -29,7 +38,7 @@ export default function Home() {
     return `${year}-${month}-${day}`;
   };
 
-  // Fetch full day's data from API (which returns UTC-based hours).
+  // Fetch full day's data from the API (which returns UTC-based hours)
   const fetchDailyData = async () => {
     const dateStr = getCurrentISTDateString();
     const res = await fetch(`/api/power?date=${dateStr}`);
@@ -48,44 +57,46 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [timeLimit]);
 
-  // Since API data is in UTC hours, we convert our current IST time to UTC by subtracting 5.5 hours.
-  // Then we exclude the current (incomplete) hour: we set upperBoundUTC = currentUTC_Hour - 1.
+  // --- Filtering and Labeling Logic ---
+
+  // We assume that each data point’s d.hour is in UTC.
+  // To get a “complete IST hour” label we add 6 hours (instead of 5.5) so that the aggregation
+  // (which covers, say, 20:00–20:59 UTC) is labeled as 02:00 (since 20 + 6 = 26 mod 24 = 2).
+  // This effectively shows the end time of that complete aggregation period.
+  
+  // Determine the current IST time.
   const nowIST = getISTDate();
-  const nowUTC = new Date(nowIST.getTime() - 5.5 * 3600 * 1000);
-  const currentUTC_Hour = nowUTC.getHours();
-  const upperBoundUTC = currentUTC_Hour - 1; // last complete hour
-  const lowerBoundUTC = Math.max(0, upperBoundUTC - timeLimit + 1);
+  // For our purposes, define the "last complete hour" as follows:
+  // If the current time is not exactly on the hour, assume the last complete hour ended at the current hour.
+  // (For example, if now is 2:40, then the complete hour that ended is labeled "02:00".)
+  const lastCompleteLabel = (nowIST.getMinutes() === 0 && nowIST.getSeconds() === 0)
+    ? (nowIST.getHours() - 1 + 24) % 24
+    : nowIST.getHours();
 
-  // Filter aggregated data (which is in UTC hours) to include only points from lowerBoundUTC to upperBoundUTC.
-  const displayedData = aggregatedData.filter(
-    (d) => d.hour >= lowerBoundUTC && d.hour <= upperBoundUTC
-  );
+  // We want to display exactly timeLimit points.
+  // Compute the start label (inclusive) in IST (as an integer 0–23).
+  const startLabel = (lastCompleteLabel - timeLimit + 1 + 24) % 24;
 
-  // Helper function: add 5 hours 30 minutes to a UTC hour and format it as an IST time string.
-  const formatISTTime = (utcHour) => {
-    let totalMinutes = utcHour * 60 + 330; // add 330 minutes (5:30)
-    totalMinutes = totalMinutes % (24 * 60); // wrap-around at midnight
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    const date = new Date();
-    date.setHours(hours, minutes, 0, 0);
-    return date.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-      timeZone: "Asia/Kolkata",
-    });
-  };
+  // For each data point, compute its IST label as an integer hour using our conversion:
+  //   IST_label = (d.hour + 6) mod 24
+  // Then filter to keep only those points whose label is within the window from startLabel to lastCompleteLabel.
+  const displayedData = aggregatedData.filter(d => {
+    const labelHour = (d.hour + 6) % 24;
+    return inHourRange(labelHour, startLabel, lastCompleteLabel);
+  });
 
-  // Build chart labels by converting each UTC hour to IST time (by adding 5:30).
-  const chartLabels = displayedData.map((d) => formatISTTime(d.hour));
+  // Build chart labels as formatted strings ("HH:00") from the computed label.
+  const chartLabels = displayedData.map(d => {
+    const labelHour = (d.hour + 6) % 24;
+    return labelHour.toString().padStart(2, "0") + ":00";
+  });
 
   const chartData = {
     labels: chartLabels,
     datasets: [
       {
         label: "Avg Power (W)",
-        data: displayedData.map((d) => parseFloat(d.avgWatts.toFixed(2))),
+        data: displayedData.map(d => parseFloat(d.avgWatts.toFixed(2))),
         borderColor: darkMode ? "#4fd1c5" : "rgb(75, 192, 192)",
         backgroundColor: "transparent",
         tension: 0.3,
@@ -102,7 +113,7 @@ export default function Home() {
   // Compute peak power from the displayed data.
   const displayedPeak =
     displayedData.length > 0
-      ? Math.max(...displayedData.map((d) => d.avgWatts))
+      ? Math.max(...displayedData.map(d => d.avgWatts))
       : 0;
 
   const maxPowerValue = 5000;
@@ -164,7 +175,9 @@ export default function Home() {
           {/* Line Chart Card */}
           <Card className="hover:shadow-lg transition-shadow duration-300">
             <CardHeader>
-              <CardTitle>Power Usage (Last {timeLimit} Hour{timeLimit > 1 ? "s" : ""})</CardTitle>
+              <CardTitle>
+                Power Usage (Last {timeLimit} Hour{timeLimit > 1 ? "s" : ""})
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <Line data={chartData} options={chartOptions} ref={chartRef} />
@@ -173,12 +186,21 @@ export default function Home() {
 
           {/* Circular Meters */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <Card className="hover:shadow-lg transition-shadow duration-300" title="Current Power Usage">
+            <Card
+              className="hover:shadow-lg transition-shadow duration-300"
+              title="Current Power Usage"
+            >
               <CardHeader>
                 <CardTitle>Current Power Usage</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col items-center justify-center space-y-4">
-                <div style={{ width: 150, height: 150, transition: "all 0.5s ease-in-out" }}>
+                <div
+                  style={{
+                    width: 150,
+                    height: 150,
+                    transition: "all 0.5s ease-in-out",
+                  }}
+                >
                   <CircularProgressbar
                     value={percentRecent}
                     text={`${recentPower ? recentPower.toFixed(0) : 0}W`}
@@ -196,12 +218,21 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            <Card className="hover:shadow-lg transition-shadow duration-300" title="10-Minute Average Power">
+            <Card
+              className="hover:shadow-lg transition-shadow duration-300"
+              title="10-Minute Average Power"
+            >
               <CardHeader>
                 <CardTitle>10-Minute Average Power</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col items-center justify-center space-y-4">
-                <div style={{ width: 150, height: 150, transition: "all 0.5s ease-in-out" }}>
+                <div
+                  style={{
+                    width: 150,
+                    height: 150,
+                    transition: "all 0.5s ease-in-out",
+                  }}
+                >
                   <CircularProgressbar
                     value={percentAvg}
                     text={`${avgPower10 ? avgPower10.toFixed(0) : 0}W`}
