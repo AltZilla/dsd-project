@@ -10,7 +10,7 @@ export default function Home() {
   const [recentPower, setRecentPower] = useState(0);
   const [avgPower10, setAvgPower10] = useState(0);
   const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [timeLimit, setTimeLimit] = useState(1); // Default to 1 hour
+  const [timeLimit, setTimeLimit] = useState(1); 
   const [darkMode, setDarkMode] = useState(false);
   const chartRef = useRef(null);
 
@@ -22,7 +22,6 @@ export default function Home() {
     }
   }, []);
 
-  // Fetch data using the rolling window approach.
   const fetchDailyData = async () => {
     try {
       const res = await fetch(`/api/power?limit=${timeLimit}`);
@@ -42,7 +41,6 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [timeLimit]);
 
-  // Build chart labels from the API's "label" property.
   const chartLabels = aggregatedData.map(d => {
     const date = new Date(d.timestamp);
     return date.toLocaleTimeString([], {
@@ -143,7 +141,6 @@ export default function Home() {
     <div className={darkMode ? "dark" : ""}>
       <div className="min-h-screen bg-gray-100 dark:bg-gray-800 transition-colors duration-500">
         <div className="container mx-auto p-4 space-y-8">
-          {/* Header */}
           <div className="flex flex-col md:flex-row md:justify-between md:items-center space-y-4 md:space-y-0">
             <div className="flex flex-col space-y-1">
               <div className="text-sm text-gray-500 dark:text-gray-300">
@@ -190,7 +187,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Line Chart */}
           <Card className="hover:shadow-lg transition-shadow duration-300">
             <CardHeader>
               <CardTitle>
@@ -202,7 +198,6 @@ export default function Home() {
             </CardContent>
           </Card>
 
-          {/* Circular Meters */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <Card className="hover:shadow-lg transition-shadow duration-300" title="Current Power Usage">
               <CardHeader>
@@ -251,7 +246,6 @@ export default function Home() {
             </Card>
           </div>
 
-          {/* Peak Power */}
           <Card className="hover:shadow-lg transition-shadow duration-300" title="Peak Power Usage">
             <CardHeader>
               <CardTitle>Peak Power Usage</CardTitle>
