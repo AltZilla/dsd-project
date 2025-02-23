@@ -1,36 +1,35 @@
 // pages/index.js
-import React, { useEffect, useState, useRef } from 'react';
-import { Line } from 'react-chartjs-2';
-import 'chart.js/auto';
-import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
-import 'react-circular-progressbar/dist/styles.css';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import React, { useEffect, useState, useRef } from "react";
+import { Line } from "react-chartjs-2";
+import "chart.js/auto";
+import { CircularProgressbar, buildStyles } from "react-circular-progressbar";
+import "react-circular-progressbar/dist/styles.css";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
 export default function Home() {
   // Data states
-  const [aggregatedData, setAggregatedData] = useState([]); // Full day's aggregated data
+  const [aggregatedData, setAggregatedData] = useState([]); // full day's data (API returns UTC hours)
   const [recentPower, setRecentPower] = useState(0);
   const [avgPower10, setAvgPower10] = useState(0);
   const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [timeLimit, setTimeLimit] = useState(24); // Time limit in hours (default last 24 hours)
+  const [timeLimit, setTimeLimit] = useState(24); // in hours (default: last 24 hours)
   const [darkMode, setDarkMode] = useState(false);
   const chartRef = useRef(null);
 
-  // Helper to get current IST date/time
-  const getISTDate = () => {
-    return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  };
+  // Helper: Get current time in IST (using Asia/Kolkata)
+  const getISTDate = () =>
+    new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
 
-  // Build a date string "YYYY-MM-DD" from the current IST date.
+  // Build date string "YYYY-MM-DD" from current IST date
   const getCurrentISTDateString = () => {
     const nowIST = getISTDate();
     const year = nowIST.getFullYear();
-    const month = (nowIST.getMonth() + 1).toString().padStart(2, '0');
-    const day = nowIST.getDate().toString().padStart(2, '0');
+    const month = (nowIST.getMonth() + 1).toString().padStart(2, "0");
+    const day = nowIST.getDate().toString().padStart(2, "0");
     return `${year}-${month}-${day}`;
   };
 
-  // Fetch daily aggregated data using the current IST date.
+  // Fetch full day's data from API (which returns UTC-based hours)
   const fetchDailyData = async () => {
     const dateStr = getCurrentISTDateString();
     const res = await fetch(`/api/power?date=${dateStr}`);
@@ -43,41 +42,50 @@ export default function Home() {
     setLastUpdated(new Date());
   };
 
-  // Auto-update every 5 seconds.
   useEffect(() => {
     fetchDailyData();
     const interval = setInterval(fetchDailyData, 5000);
     return () => clearInterval(interval);
   }, [timeLimit]);
 
-  // Use current IST time to filter data.
+  // Convert current IST to UTC by subtracting 5.5 hours.
   const nowIST = getISTDate();
-  const currentHour = nowIST.getHours();
-  // Determine the lower bound hour (if currentHour is less than the requested window, show from 0).
-  const lowerBound = Math.max(0, currentHour - timeLimit + 1);
+  const nowUTC = new Date(nowIST.getTime() - 5.5 * 3600 * 1000);
+  const currentUTC_Hour = nowUTC.getHours();
+  const lowerBoundUTC = Math.max(0, currentUTC_Hour - timeLimit + 1);
+
+  // Filter the aggregated data (which is in UTC hours) to include only points from lowerBoundUTC to currentUTC_Hour.
   const displayedData = aggregatedData.filter(
-    d => d.hour >= lowerBound && d.hour <= currentHour
+    (d) => d.hour >= lowerBoundUTC && d.hour <= currentUTC_Hour
   );
 
-  // Build chart labels in IST.
-  const istBase = new Date(nowIST.getFullYear(), nowIST.getMonth(), nowIST.getDate());
-  const chartLabels = displayedData.map(d => {
-    const labelTime = new Date(istBase);
-    labelTime.setHours(d.hour, 0, 0, 0);
-    return labelTime.toLocaleTimeString("en-US", {
+  // Helper function: Add 5 hours and 30 minutes directly to a UTC hour and format it as IST.
+  const formatISTTime = (utcHour) => {
+    // Convert hour to minutes and add 330 minutes (5h30m)
+    let totalMinutes = utcHour * 60 + 330;
+    totalMinutes = totalMinutes % (24 * 60); // wrap around 24 hours if necessary
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    // Create a temporary date to format the time
+    const date = new Date();
+    date.setHours(hours, minutes, 0, 0);
+    return date.toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
       hour12: true,
-      timeZone: "Asia/Kolkata"
+      timeZone: "Asia/Kolkata",
     });
-  });
+  };
+
+  // Build chart labels by converting each UTC hour (from the API) to IST time by adding 5:30.
+  const chartLabels = displayedData.map((d) => formatISTTime(d.hour));
 
   const chartData = {
     labels: chartLabels,
     datasets: [
       {
         label: "Avg Power (W)",
-        data: displayedData.map(d => parseFloat(d.avgWatts.toFixed(2))),
+        data: displayedData.map((d) => parseFloat(d.avgWatts.toFixed(2))),
         borderColor: darkMode ? "#4fd1c5" : "rgb(75, 192, 192)",
         backgroundColor: "transparent",
         tension: 0.3,
@@ -94,10 +102,9 @@ export default function Home() {
   // Compute peak power from the displayed data.
   const displayedPeak =
     displayedData.length > 0
-      ? Math.max(...displayedData.map(d => d.avgWatts))
+      ? Math.max(...displayedData.map((d) => d.avgWatts))
       : 0;
 
-  // Circular meter settings.
   const maxPowerValue = 5000;
   const percentRecent = Math.min((recentPower / maxPowerValue) * 100, 100);
   const percentAvg = Math.min((avgPower10 / maxPowerValue) * 100, 100);
@@ -111,7 +118,7 @@ export default function Home() {
             <div className="flex flex-col space-y-1">
               <div className="text-sm text-gray-500 dark:text-gray-300">
                 Last updated:{" "}
-                {new Date().toLocaleTimeString([], {
+                {getISTDate().toLocaleTimeString([], {
                   hour: "2-digit",
                   minute: "2-digit",
                   second: "2-digit",
@@ -168,10 +175,7 @@ export default function Home() {
 
           {/* Circular Meters */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <Card
-              className="hover:shadow-lg transition-shadow duration-300"
-              title="Current Power Usage"
-            >
+            <Card className="hover:shadow-lg transition-shadow duration-300" title="Current Power Usage">
               <CardHeader>
                 <CardTitle>Current Power Usage</CardTitle>
               </CardHeader>
@@ -194,10 +198,7 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            <Card
-              className="hover:shadow-lg transition-shadow duration-300"
-              title="10-Minute Average Power"
-            >
+            <Card className="hover:shadow-lg transition-shadow duration-300" title="10-Minute Average Power">
               <CardHeader>
                 <CardTitle>10-Minute Average Power</CardTitle>
               </CardHeader>
