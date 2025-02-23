@@ -5,7 +5,7 @@ let recent_date = new Date();
 
 export default async function handler(req, res) {
   const client = await clientPromise;
-  const db = client.db(); // adjust if you need a specific database name
+  const db = client.db();
 
   if (req.method === 'POST') {
     try {
@@ -16,11 +16,9 @@ export default async function handler(req, res) {
         timestamp: now,
       };
 
-      // Update global recent variables
       recent = Number(watts);
       recent_date = now;
 
-      // Check if the last entry is in the same minute
       const lastEntry = await db
         .collection('power')
         .findOne({}, { sort: { timestamp: -1 } });
@@ -36,10 +34,8 @@ export default async function handler(req, res) {
         }
       }
 
-      // Otherwise, insert a new reading.
       await db.collection('power').insertOne(newEntry);
 
-      // Optionally, remove entries older than 24 hours
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       await db.collection('power').deleteMany({ timestamp: { $lt: oneDayAgo } });
 
@@ -50,18 +46,15 @@ export default async function handler(req, res) {
     }
   } else if (req.method === 'GET') {
     try {
-      // If a "limit" parameter is provided, do a rolling window aggregation.
       if (req.query.limit) {
         const limitHours = Number(req.query.limit);
         const now = new Date();
         const startTime = new Date(now.getTime() - limitHours * 3600000);
 
-        // Query all records with timestamp >= startTime
         const records = await db.collection('power')
           .find({ timestamp: { $gte: startTime } })
           .toArray();
 
-        // Group records by minute
         const grouped = {};
         records.forEach(entry => {
           const date = new Date(entry.timestamp);
@@ -82,12 +75,10 @@ export default async function handler(req, res) {
           }))
           .sort((a, b) => a.timestamp - b.timestamp);
 
-        // Compute recent reading (if the last record was within 10 seconds)
         let recentPower = 0;
         const diffSec = (new Date() - recent_date) / 1000;
         if (diffSec < 10) recentPower = recent;
 
-        // Compute 10-minute average using records from the last 10 minutes
         const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
         const recentEntries = records.filter(entry => new Date(entry.timestamp) >= tenMinsAgo);
         let avg10 = 0;
@@ -97,7 +88,6 @@ export default async function handler(req, res) {
 
         return res.status(200).json({ aggregatedData, recent: recentPower, avg10 });
       } else {
-        // Otherwise, use the existing daily aggregated view.
         let { date, hour } = req.query;
         let startDate;
         if (date) {
@@ -135,7 +125,6 @@ export default async function handler(req, res) {
           }
           return res.status(200).json({ powerData, recent: recentPower, avg10 });
         } else {
-          // Daily aggregated view (one value per hour in IST)
           let dayStart = new Date(startDate);
           dayStart.setHours(0, 0, 0, 0);
           let dayEnd = new Date(dayStart);
