@@ -16,12 +16,11 @@ function inHourRange(hour, start, end) {
 }
 
 export default function Home() {
-  // Data states
-  const [aggregatedData, setAggregatedData] = useState([]); // full day's data (API returns UTC hours)
+  const [aggregatedData, setAggregatedData] = useState([]);
   const [recentPower, setRecentPower] = useState(0);
   const [avgPower10, setAvgPower10] = useState(0);
   const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [timeLimit, setTimeLimit] = useState(24); // in hours (default: last 24 hours)
+  const [timeLimit, setTimeLimit] = useState(24);
   const [darkMode, setDarkMode] = useState(false);
   const chartRef = useRef(null);
 
@@ -32,23 +31,46 @@ export default function Home() {
   // Build a date string "YYYY-MM-DD" from the current IST date.
   const getCurrentISTDateString = () => {
     const nowIST = getISTDate();
-    const year = nowIST.getFullYear();
-    const month = (nowIST.getMonth() + 1).toString().padStart(2, "0");
-    const day = nowIST.getDate().toString().padStart(2, "0");
-    return `${year}-${month}-${day}`;
+    return nowIST.toISOString().split("T")[0].replace(/-/g, "-");
   };
 
   // Fetch full day's data from the API (which returns UTC-based hours)
   const fetchDailyData = async () => {
-    const dateStr = getCurrentISTDateString();
-    const res = await fetch(`/api/power?date=${dateStr}`);
-    const data = await res.json();
-    if (data.aggregatedData) {
-      setAggregatedData(data.aggregatedData);
+    try {
+      const istDateStr = getCurrentISTDateString();
+      const istDate = new Date(istDateStr + "T00:00:00+05:30");
+      
+      // Calculate UTC dates needed for IST day coverage
+      const prevUTCDate = new Date(istDate);
+      prevUTCDate.setHours(istDate.getHours() - 5); // Adjust for UTC offset
+      const prevUTCDateStr = prevUTCDate.toISOString().split("T")[0];
+      
+      const currUTCDate = new Date(istDate);
+      currUTCDate.setHours(istDate.getHours() + 19); // Cover entire IST day
+      const currUTCDateStr = currUTCDate.toISOString().split("T")[0];
+
+      // Fetch data for both UTC dates
+      const [resPrev, resCurr] = await Promise.all([
+        fetch(`/api/power?date=${prevUTCDateStr}`),
+        fetch(`/api/power?date=${currUTCDateStr}`),
+      ]);
+
+      const dataPrev = await resPrev.json();
+      const dataCurr = await resCurr.json();
+
+      // Combine relevant data (18-23 from previous UTC day and 0-17 from current UTC day)
+      const combinedData = [
+        ...(dataPrev.aggregatedData?.filter(d => d.hour >= 18) || []),
+        ...(dataCurr.aggregatedData?.filter(d => d.hour <= 17) || []),
+      ].sort((a, b) => a.hour - b.hour);
+
+      setAggregatedData(combinedData);
+      setRecentPower(dataCurr.recent || 0);
+      setAvgPower10(dataCurr.avg10 || 0);
+      setLastUpdated(new Date());
+    } catch (error) {
+      console.error("Error fetching data:", error);
     }
-    setRecentPower(data.recent);
-    setAvgPower10(data.avg10);
-    setLastUpdated(new Date());
   };
 
   useEffect(() => {
@@ -58,34 +80,25 @@ export default function Home() {
   }, [timeLimit]);
 
   // --- Filtering and Labeling Logic ---
-
-  // We assume that each data point’s d.hour is in UTC.
-  // To get a “complete IST hour” label we add 6 hours (instead of 5.5) so that the aggregation
-  // (which covers, say, 20:00–20:59 UTC) is labeled as 02:00 (since 20 + 6 = 26 mod 24 = 2).
-  // This effectively shows the end time of that complete aggregation period.
-  
-  // Determine the current IST time.
+  // Determine the last complete IST hour. If the current time is not exactly on the hour,
+  // we treat the current hour as complete.
   const nowIST = getISTDate();
-  // For our purposes, define the "last complete hour" as follows:
-  // If the current time is not exactly on the hour, assume the last complete hour ended at the current hour.
-  // (For example, if now is 2:40, then the complete hour that ended is labeled "02:00".)
-  const lastCompleteLabel = (nowIST.getMinutes() === 0 && nowIST.getSeconds() === 0)
+  const lastCompleteLabel = nowIST.getMinutes() === 0 && nowIST.getSeconds() === 0
     ? (nowIST.getHours() - 1 + 24) % 24
     : nowIST.getHours();
 
-  // We want to display exactly timeLimit points.
-  // Compute the start label (inclusive) in IST (as an integer 0–23).
+  // Compute the start label based on the selected timeLimit.
   const startLabel = (lastCompleteLabel - timeLimit + 1 + 24) % 24;
 
-  // For each data point, compute its IST label as an integer hour using our conversion:
+  // For each data point (whose d.hour is in UTC), compute its IST label as:
   //   IST_label = (d.hour + 6) mod 24
-  // Then filter to keep only those points whose label is within the window from startLabel to lastCompleteLabel.
+  // Then, filter data to include only points whose label is within the window [startLabel, lastCompleteLabel]
   const displayedData = aggregatedData.filter(d => {
     const labelHour = (d.hour + 6) % 24;
     return inHourRange(labelHour, startLabel, lastCompleteLabel);
   });
 
-  // Build chart labels as formatted strings ("HH:00") from the computed label.
+  // Build chart labels (formatted as "HH:00") from the computed IST label.
   const chartLabels = displayedData.map(d => {
     const labelHour = (d.hour + 6) % 24;
     return labelHour.toString().padStart(2, "0") + ":00";
@@ -110,7 +123,6 @@ export default function Home() {
     animation: { duration: 1000 },
   };
 
-  // Compute peak power from the displayed data.
   const displayedPeak =
     displayedData.length > 0
       ? Math.max(...displayedData.map(d => d.avgWatts))
@@ -172,7 +184,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Line Chart Card */}
+          {/* Line Chart */}
           <Card className="hover:shadow-lg transition-shadow duration-300">
             <CardHeader>
               <CardTitle>
@@ -186,21 +198,12 @@ export default function Home() {
 
           {/* Circular Meters */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <Card
-              className="hover:shadow-lg transition-shadow duration-300"
-              title="Current Power Usage"
-            >
+            <Card className="hover:shadow-lg transition-shadow duration-300" title="Current Power Usage">
               <CardHeader>
                 <CardTitle>Current Power Usage</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col items-center justify-center space-y-4">
-                <div
-                  style={{
-                    width: 150,
-                    height: 150,
-                    transition: "all 0.5s ease-in-out",
-                  }}
-                >
+                <div style={{ width: 150, height: 150, transition: "all 0.5s ease-in-out" }}>
                   <CircularProgressbar
                     value={percentRecent}
                     text={`${recentPower ? recentPower.toFixed(0) : 0}W`}
@@ -218,21 +221,12 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            <Card
-              className="hover:shadow-lg transition-shadow duration-300"
-              title="10-Minute Average Power"
-            >
+            <Card className="hover:shadow-lg transition-shadow duration-300" title="10-Minute Average Power">
               <CardHeader>
                 <CardTitle>10-Minute Average Power</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col items-center justify-center space-y-4">
-                <div
-                  style={{
-                    width: 150,
-                    height: 150,
-                    transition: "all 0.5s ease-in-out",
-                  }}
-                >
+                <div style={{ width: 150, height: 150, transition: "all 0.5s ease-in-out" }}>
                   <CircularProgressbar
                     value={percentAvg}
                     text={`${avgPower10 ? avgPower10.toFixed(0) : 0}W`}
@@ -251,14 +245,16 @@ export default function Home() {
             </Card>
           </div>
 
-          {/* Peak Power Card */}
+          {/* Peak Power */}
           <Card className="hover:shadow-lg transition-shadow duration-300" title="Peak Power Usage">
             <CardHeader>
               <CardTitle>Peak Power Usage</CardTitle>
             </CardHeader>
             <CardContent className="flex items-center justify-center">
               <div className="text-3xl font-bold text-red-600 dark:text-red-400">
-                {displayedPeak ? displayedPeak.toFixed(0) : 0}W
+                {displayedData.length > 0
+                  ? Math.max(...displayedData.map(d => d.avgWatts)).toFixed(0)
+                  : 0}W
               </div>
             </CardContent>
           </Card>
