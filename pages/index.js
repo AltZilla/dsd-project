@@ -16,11 +16,11 @@ export default function Home() {
   const [darkMode, setDarkMode] = useState(false);
   const chartRef = useRef(null);
 
-  // Helper: Get current time in IST (using Asia/Kolkata)
+  // Helper: Get current IST time using Asia/Kolkata timezone.
   const getISTDate = () =>
     new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
 
-  // Build date string "YYYY-MM-DD" from current IST date
+  // Build date string "YYYY-MM-DD" from current IST date.
   const getCurrentISTDateString = () => {
     const nowIST = getISTDate();
     const year = nowIST.getFullYear();
@@ -29,7 +29,7 @@ export default function Home() {
     return `${year}-${month}-${day}`;
   };
 
-  // Fetch full day's data from API (which returns UTC-based hours)
+  // Fetch full day's data from API (which returns UTC-based hours).
   const fetchDailyData = async () => {
     const dateStr = getCurrentISTDateString();
     const res = await fetch(`/api/power?date=${dateStr}`);
@@ -48,25 +48,25 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [timeLimit]);
 
-  // Convert current IST to UTC by subtracting 5.5 hours.
+  // Since API data is in UTC hours, we convert our current IST time to UTC by subtracting 5.5 hours.
+  // Then we exclude the current (incomplete) hour: we set upperBoundUTC = currentUTC_Hour - 1.
   const nowIST = getISTDate();
   const nowUTC = new Date(nowIST.getTime() - 5.5 * 3600 * 1000);
   const currentUTC_Hour = nowUTC.getHours();
-  const lowerBoundUTC = Math.max(0, currentUTC_Hour - timeLimit + 1);
+  const upperBoundUTC = currentUTC_Hour - 1; // last complete hour
+  const lowerBoundUTC = Math.max(0, upperBoundUTC - timeLimit + 1);
 
-  // Filter the aggregated data (which is in UTC hours) to include only points from lowerBoundUTC to currentUTC_Hour.
+  // Filter aggregated data (which is in UTC hours) to include only points from lowerBoundUTC to upperBoundUTC.
   const displayedData = aggregatedData.filter(
-    (d) => d.hour >= lowerBoundUTC && d.hour <= currentUTC_Hour
+    (d) => d.hour >= lowerBoundUTC && d.hour <= upperBoundUTC
   );
 
-  // Helper function: Add 5 hours and 30 minutes directly to a UTC hour and format it as IST.
+  // Helper function: add 5 hours 30 minutes to a UTC hour and format it as an IST time string.
   const formatISTTime = (utcHour) => {
-    // Convert hour to minutes and add 330 minutes (5h30m)
-    let totalMinutes = utcHour * 60 + 330;
-    totalMinutes = totalMinutes % (24 * 60); // wrap around 24 hours if necessary
+    let totalMinutes = utcHour * 60 + 330; // add 330 minutes (5:30)
+    totalMinutes = totalMinutes % (24 * 60); // wrap-around at midnight
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
-    // Create a temporary date to format the time
     const date = new Date();
     date.setHours(hours, minutes, 0, 0);
     return date.toLocaleTimeString("en-US", {
@@ -77,7 +77,7 @@ export default function Home() {
     });
   };
 
-  // Build chart labels by converting each UTC hour (from the API) to IST time by adding 5:30.
+  // Build chart labels by converting each UTC hour to IST time (by adding 5:30).
   const chartLabels = displayedData.map((d) => formatISTTime(d.hour));
 
   const chartData = {
@@ -164,9 +164,7 @@ export default function Home() {
           {/* Line Chart Card */}
           <Card className="hover:shadow-lg transition-shadow duration-300">
             <CardHeader>
-              <CardTitle>
-                Power Usage (Last {timeLimit} Hours)
-              </CardTitle>
+              <CardTitle>Power Usage (Last {timeLimit} Hour{timeLimit > 1 ? "s" : ""})</CardTitle>
             </CardHeader>
             <CardContent>
               <Line data={chartData} options={chartOptions} ref={chartRef} />
