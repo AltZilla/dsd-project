@@ -1,224 +1,183 @@
-// pages/index.js
-import React, { useEffect, useState, useRef } from 'react';
-import { Bar } from 'react-chartjs-2';
-import 'chart.js/auto';
-import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
-import 'react-circular-progressbar/dist/styles.css';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import React, { useEffect, useState, useRef } from "react";
+import { Line } from "react-chartjs-2";
+import "chart.js/auto";
+import { CircularProgressbar, buildStyles } from "react-circular-progressbar";
+import "react-circular-progressbar/dist/styles.css";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
 export default function Home() {
-  // Data states
-  const [aggregatedData, setAggregatedData] = useState([]); // Daily aggregated view
-  const [detailedData, setDetailedData] = useState([]); // Hour-level detailed view
+  const [aggregatedData, setAggregatedData] = useState([]);
   const [recentPower, setRecentPower] = useState(0);
   const [avgPower10, setAvgPower10] = useState(0);
-  const [peakPower, setPeakPower] = useState(0);
   const [lastUpdated, setLastUpdated] = useState(new Date());
-
-  // For one-day selection
-  const [selectedDate, setSelectedDate] = useState(new Date());
-
-  // For hour-level view (if set, we are drilling down)
-  const [selectedHour, setSelectedHour] = useState(null);
-
-  // For theming (dark/light mode)
+  const [timeLimit, setTimeLimit] = useState(1); 
   const [darkMode, setDarkMode] = useState(false);
-
-  // Reference to the chart instance (for click handling in daily view)
   const chartRef = useRef(null);
 
-  // Build date string "YYYY-MM-DD" from selectedDate.
-  const getDateString = (date) => {
-    const year = date.getFullYear();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  // Fetch daily aggregated data.
-  const fetchDailyData = async () => {
-    const dateStr = getDateString(selectedDate);
-    const res = await fetch(`/api/power?date=${dateStr}`);
-    const data = await res.json();
-    if (data.aggregatedData) {
-      setAggregatedData(data.aggregatedData);
-    }
-    setRecentPower(data.recent);
-    setAvgPower10(data.avg10);
-    setLastUpdated(new Date());
-
-    // Compute peak power from aggregated data.
-    if (data.aggregatedData && data.aggregatedData.length) {
-      const peak = Math.max(...data.aggregatedData.map(d => d.avgWatts));
-      setPeakPower(peak);
-    } else {
-      setPeakPower(0);
-    }
-  };
-
-  // Fetch detailed data for a specific hour.
-  const fetchHourlyData = async (hour) => {
-    const dateStr = getDateString(selectedDate);
-    const res = await fetch(`/api/power?date=${dateStr}&hour=${hour}`);
-    const data = await res.json();
-    if (data.powerData) {
-      setDetailedData(data.powerData);
-    }
-    setRecentPower(data.recent);
-    setAvgPower10(data.avg10);
-    setLastUpdated(new Date());
-
-    // Compute peak power from detailed records.
-    if (data.powerData && data.powerData.length) {
-      const peak = Math.max(...data.powerData.map(d => d.watts));
-      setPeakPower(peak);
-    } else {
-      setPeakPower(0);
-    }
-  };
-
-  // Auto-update every 5 seconds.
   useEffect(() => {
-    const updateFunc = selectedHour === null
-      ? fetchDailyData
-      : () => fetchHourlyData(selectedHour);
-    updateFunc(); // initial call
-    const interval = setInterval(updateFunc, 5000);
+    if (typeof window !== 'undefined') {
+      const { Chart: ChartJS, registerables } = require('chart.js');
+      const zoomPlugin = require('chartjs-plugin-zoom');
+      ChartJS.register(...registerables, zoomPlugin);
+    }
+  }, []);
+
+  const fetchDailyData = async () => {
+    try {
+      const res = await fetch(`/api/power?limit=${timeLimit}`);
+      const data = await res.json();
+      setAggregatedData(data.aggregatedData);
+      setRecentPower(data.recent);
+      setAvgPower10(data.avg10);
+      setLastUpdated(new Date());
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchDailyData();
+    const interval = setInterval(fetchDailyData, 5000);
     return () => clearInterval(interval);
-  }, [selectedDate, selectedHour]);
+  }, [timeLimit]);
 
-  // Build chart data and options.
-  let chartData, chartOptions;
-  if (selectedHour === null) {
-    // Daily aggregated view: one bar per hour.
-    chartData = {
-      labels: aggregatedData.map(d => {
-        // Create a Date object for the selected day at the given IST hour.
-        const hourDate = new Date(selectedDate);
-        hourDate.setHours(d.hour, 0, 0, 0);
-        return hourDate.toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-          timeZone: "Asia/Kolkata"
-        });
-      }),
-      datasets: [
-        {
-          label: 'Avg Power (W)',
-          data: aggregatedData.map(d => parseFloat(d.avgWatts.toFixed(2))),
-          backgroundColor: darkMode ? '#4fd1c5' : 'rgb(75, 192, 192)',
-        },
-      ],
-    };
+  const chartLabels = aggregatedData.map(d => {
+    const date = new Date(d.timestamp);
+    return date.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  });
 
-    chartOptions = {
-      responsive: true,
-      onClick: (event, elements) => {
-        if (elements.length > 0) {
-          const index = elements[0].index;
-          const hour = aggregatedData[index].hour;
-          setSelectedHour(hour);
+  const chartData = {
+    labels: chartLabels,
+    datasets: [
+      {
+        label: "Avg Power (W)",
+        data: aggregatedData.map(d => parseFloat(d.avgWatts.toFixed(2))),
+        borderColor: darkMode ? "#4fd1c5" : "rgb(75, 192, 192)",
+        backgroundColor: "transparent",
+        tension: 0.3,
+        pointRadius: 5,
+        pointHoverRadius: 7,
+      },
+    ],
+  };
+
+  const chartOptions = {
+    responsive: true,
+    scales: {
+      y: { beginAtZero: true },
+      x: {
+        ticks: {
+          maxRotation: 45,
+          minRotation: 45,
+          callback: function(value, index, values) {
+            const totalLabels = values.length;
+            let step = 1;
+            let formatOptions = { hour: "2-digit", minute: "2-digit", hour12: true };
+
+            if (timeLimit > 6) {
+              if (totalLabels > 40) {
+                step = Math.ceil(totalLabels / 20);
+                formatOptions = { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true };
+              } else if (totalLabels > 20) {
+                step = 2;
+                formatOptions = { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true };
+              } else if (totalLabels > 10) {
+                formatOptions = { day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true };
+              }
+            } else {
+              if (totalLabels > 40) {
+                step = Math.ceil(totalLabels / 20);
+              } else if (totalLabels > 20) {
+                step = 2;
+              }
+            }
+
+            if (index % step === 0) {
+              const date = new Date(aggregatedData[index].timestamp);
+              return date.toLocaleString([], formatOptions);
+            }
+            return '';
+          }
         }
-      },
-      scales: {
-        y: { beginAtZero: true },
-      },
-      animation: { duration: 1000 },
-    };
-  } else {
-    // Hour-level detailed view: one bar per record.
-    chartData = {
-      labels: detailedData.map(d =>
-        new Date(d.timestamp).toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: true,
-          timeZone: "Asia/Kolkata"
-        })
-      ),
-      datasets: [
-        {
-          label: `Power Usage for ${selectedHour}:00`,
-          data: detailedData.map(d => d.watts),
-          backgroundColor: darkMode ? '#f6ad55' : 'rgb(255, 159, 64)',
+      }
+    },
+    animation: { duration: 1000 },
+    plugins: {
+      zoom: {
+        pan: {
+          enabled: true,
+          mode: 'x',
         },
-      ],
-    };
-
-    chartOptions = {
-      responsive: true,
-      scales: {
-        y: { beginAtZero: true },
+        zoom: {
+          wheel: {
+            enabled: true,
+          },
+          pinch: {
+            enabled: true,
+          },
+          mode: 'x',
+        },
       },
-      animation: { duration: 1000 },
-    };
-  }
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            return `Avg Power: ${context.raw} W`;
+          }
+        }
+      }
+    },
+  };
 
-  // Circular meter settings.
+  const displayedPeak = aggregatedData.length > 0 ? Math.max(...aggregatedData.map(d => d.avgWatts)) : 0;
   const maxPowerValue = 5000;
   const percentRecent = Math.min((recentPower / maxPowerValue) * 100, 100);
   const percentAvg = Math.min((avgPower10 / maxPowerValue) * 100, 100);
 
   return (
-    <div className={darkMode ? 'dark' : ''}>
+    <div className={darkMode ? "dark" : ""}>
       <div className="min-h-screen bg-gray-100 dark:bg-gray-800 transition-colors duration-500">
         <div className="container mx-auto p-4 space-y-8">
-          {/* Header */}
           <div className="flex flex-col md:flex-row md:justify-between md:items-center space-y-4 md:space-y-0">
             <div className="flex flex-col space-y-1">
               <div className="text-sm text-gray-500 dark:text-gray-300">
-                Last updated:{" "}
-                {lastUpdated.toLocaleTimeString([], {
+                Last updated: {new Date().toLocaleTimeString([], {
                   hour: "2-digit",
                   minute: "2-digit",
                   second: "2-digit",
                   hour12: true,
-                  timeZone: "Asia/Kolkata"
                 })}
               </div>
               <div className="flex items-center space-x-4">
                 <div className="flex flex-col">
                   <span className="text-sm text-gray-500 dark:text-gray-300">
-                    Select Date:
+                    Time Limit (hours):
                   </span>
-                  <DatePicker
-                    selected={selectedDate}
-                    onChange={(date) => {
-                      setSelectedDate(date);
-                      setSelectedHour(null);
-                    }}
-                    dateFormat="yyyy/MM/dd"
+                  <select
+                    value={timeLimit}
+                    onChange={(e) => setTimeLimit(Number(e.target.value))}
                     className="p-2 rounded shadow border"
-                  />
+                  >
+                    <option value={1}>Last 1 Hour</option>
+                    <option value={6}>Last 6 Hours</option>
+                    <option value={12}>Last 12 Hours</option>
+                    <option value={24}>Last 24 Hours</option>
+                    <option value={72}>Last 3 Days</option>
+                    <option value={168}>Last 1 Week</option>
+                  </select>
                 </div>
                 <button
-                  onClick={() => {
-                    if (selectedHour === null) {
-                      fetchDailyData();
-                    } else {
-                      fetchHourlyData(selectedHour);
-                    }
-                  }}
+                  onClick={fetchDailyData}
                   className="px-4 py-2 bg-blue-500 text-white rounded shadow hover:bg-blue-600 transition-colors"
-                  title="Load data for the selected date/hour"
                 >
                   Load Data
                 </button>
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              {selectedHour !== null && (
-                <button
-                  onClick={() => setSelectedHour(null)}
-                  className="px-4 py-2 bg-green-500 text-white rounded shadow hover:bg-green-600 transition-colors"
-                >
-                  Back to Daily View
-                </button>
-              )}
               <button
                 onClick={() => setDarkMode(!darkMode)}
                 className="px-4 py-2 bg-blue-500 text-white rounded shadow hover:bg-blue-600 transition-colors"
@@ -228,21 +187,17 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Bar Chart Card */}
           <Card className="hover:shadow-lg transition-shadow duration-300">
             <CardHeader>
               <CardTitle>
-                {selectedHour === null
-                  ? "Daily Power Usage (Averaged by Hour)"
-                  : `Power Usage Details for ${selectedHour}:00`}
+                Power Usage (Last {timeLimit} Hour{timeLimit > 1 ? "s" : ""})
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <Bar data={chartData} options={chartOptions} ref={chartRef} />
+              <Line data={chartData} options={chartOptions} ref={chartRef} />
             </CardContent>
           </Card>
 
-          {/* Circular Meters */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <Card className="hover:shadow-lg transition-shadow duration-300" title="Current Power Usage">
               <CardHeader>
@@ -291,14 +246,13 @@ export default function Home() {
             </Card>
           </div>
 
-          {/* Peak Power Card */}
           <Card className="hover:shadow-lg transition-shadow duration-300" title="Peak Power Usage">
             <CardHeader>
               <CardTitle>Peak Power Usage</CardTitle>
             </CardHeader>
             <CardContent className="flex items-center justify-center">
               <div className="text-3xl font-bold text-red-600 dark:text-red-400">
-                {peakPower ? peakPower.toFixed(0) : 0}W
+                {displayedPeak ? displayedPeak.toFixed(0) : 0}W
               </div>
             </CardContent>
           </Card>
