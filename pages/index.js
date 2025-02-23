@@ -76,12 +76,33 @@ export default function Home() {
           maxRotation: 45,
           minRotation: 45,
           callback: function(value, index, values) {
-            const date = new Date(aggregatedData[index].timestamp);
-            return date.toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: true,
-            });
+            const totalLabels = values.length;
+            let step = 1;
+            let formatOptions = { hour: "2-digit", minute: "2-digit", hour12: true };
+
+            if (timeLimit > 6) {
+              if (totalLabels > 40) {
+                step = Math.ceil(totalLabels / 20);
+                formatOptions = { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true };
+              } else if (totalLabels > 20) {
+                step = 2;
+                formatOptions = { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true };
+              } else if (totalLabels > 10) {
+                formatOptions = { day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true };
+              }
+            } else {
+              if (totalLabels > 40) {
+                step = Math.ceil(totalLabels / 20);
+              } else if (totalLabels > 20) {
+                step = 2;
+              }
+            }
+
+            if (index % step === 0) {
+              const date = new Date(aggregatedData[index].timestamp);
+              return date.toLocaleString([], formatOptions);
+            }
+            return '';
           }
         }
       }
@@ -147,6 +168,8 @@ export default function Home() {
                     <option value={6}>Last 6 Hours</option>
                     <option value={12}>Last 12 Hours</option>
                     <option value={24}>Last 24 Hours</option>
+                    <option value={72}>Last 3 Days</option>
+                    <option value={168}>Last 1 Week</option>
                   </select>
                 </div>
                 <button
