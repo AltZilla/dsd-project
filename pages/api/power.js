@@ -1,4 +1,3 @@
-// pages/api/power.js
 import clientPromise from '@/lib/mongodb';
 
 export default async function handler(req, res) {
@@ -44,96 +43,143 @@ export default async function handler(req, res) {
     }
   } else if (req.method === 'GET') {
     try {
-      // Get the date parameter (format: YYYY-MM-DD). Default to today.
-      let { date, hour } = req.query;
-      let startDate;
-      if (date) {
-        startDate = new Date(date);
-      } else {
-        startDate = new Date();
-        startDate.setHours(0, 0, 0, 0);
-      }
-
-      // If an hour is provided, return detailed records for that hour.
-      if (hour !== undefined) {
-        const hourNumber = parseInt(hour, 10);
-        let hourStart = new Date(startDate);
-        hourStart.setHours(hourNumber, 0, 0, 0);
-        let hourEnd = new Date(hourStart);
-        hourEnd.setHours(hourNumber + 1);
-
-        const powerData = await db
-          .collection('power')
-          .find({ timestamp: { $gte: hourStart, $lt: hourEnd } })
-          .sort({ timestamp: 1 })
+      // If a "limit" parameter is provided, do a rolling window aggregation.
+      if (req.query.limit) {
+        const limitHours = Number(req.query.limit);
+        // Get current IST time (by converting to "Asia/Kolkata" locale)
+        const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+        // Determine start time in IST: (now - limitHours)
+        const startTimeIST = new Date(nowIST.getTime() - limitHours * 3600000);
+        // Convert startTimeIST to UTC (timestamps are stored in UTC)
+        const startTimeUTC = new Date(startTimeIST.getTime() - 5.5 * 3600000);
+        
+        // Query all records with timestamp >= startTimeUTC
+        const records = await db.collection('power')
+          .find({ timestamp: { $gte: startTimeUTC } })
           .toArray();
 
-        // Compute recent reading and 10-minute average as before.
-        const lastEntry = await db
-          .collection('power')
-          .findOne({}, { sort: { timestamp: -1 } });
+        // Group records by minute (based on IST time)
+        const grouped = {};
+        records.forEach(entry => {
+          const istTime = new Date(entry.timestamp.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+          // Use "HH:MM" as the key
+          const key = istTime.getHours().toString().padStart(2, '0') + ":" +
+                      istTime.getMinutes().toString().padStart(2, '0');
+          if (!grouped[key]) {
+            grouped[key] = { sum: 0, count: 0, timestamp: istTime };
+          }
+          grouped[key].sum += entry.watts;
+          grouped[key].count++;
+        });
+        
+        const aggregatedData = Object.keys(grouped)
+          .map(key => ({
+            label: key,
+            avgWatts: grouped[key].sum / grouped[key].count,
+            timestamp: grouped[key].timestamp
+          }))
+          .sort((a, b) => a.timestamp - b.timestamp);
+
+        // Compute recent reading (if the last record was within 10 seconds)
         let recent = 0;
-        if (lastEntry) {
+        if (records.length > 0) {
+          const lastEntry = records[records.length - 1];
           const diffSec = (new Date() - new Date(lastEntry.timestamp)) / 1000;
           if (diffSec < 10) recent = lastEntry.watts;
         }
+        // Compute 10-minute average using records from the last 10 minutes
         const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
-        const recentEntries = powerData.filter(entry => new Date(entry.timestamp) >= tenMinsAgo);
+        const recentEntries = records.filter(entry => new Date(entry.timestamp) >= tenMinsAgo);
         let avg10 = 0;
         if (recentEntries.length > 0) {
           avg10 = recentEntries.reduce((sum, entry) => sum + entry.watts, 0) / recentEntries.length;
         }
-
-        return res.status(200).json({ powerData, recent, avg10 });
-      } else {
-        // Daily aggregated view: we want one value per hour (0 to 23) in IST.
-        let dayStart = new Date(startDate);
-        dayStart.setHours(0, 0, 0, 0);
-        let dayEnd = new Date(dayStart);
-        dayEnd.setDate(dayEnd.getDate() + 1);
-
-        const allData = await db
-          .collection('power')
-          .find({ timestamp: { $gte: dayStart, $lt: dayEnd } })
-          .toArray();
-
-        // Aggregate data by hour in IST.
-        const aggregatedData = [];
-        for (let hr = 0; hr < 24; hr++) {
-          const records = allData.filter(entry => {
-            // Convert the entry timestamp to IST and extract the hour.
-            const istHour = Number(
-              new Date(entry.timestamp)
-                .toLocaleString("en-US", { hour: "2-digit", hour12: false })
-            );
-            return istHour === hr;
-          });
-          const avgWatts =
-            records.length > 0
-              ? records.reduce((sum, rec) => sum + rec.watts, 0) / records.length
-              : 0;
-          aggregatedData.push({ hour: hr, avgWatts });
-        }
-
-        // Compute the recent reading (global) and 10-minute average.
-        const lastEntry = await db
-          .collection('power')
-          .findOne({}, { sort: { timestamp: -1 } });
-        let recent = 0;
-        if (lastEntry) {
-          const diffSec = (new Date() - new Date(lastEntry.timestamp)) / 1000;
-          if (diffSec < 10) recent = lastEntry.watts;
-        }
-        const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
-        const recentEntries = allData.filter(
-          entry => new Date(entry.timestamp) >= tenMinsAgo
-        );
-        let avg10 = 0;
-        if (recentEntries.length > 0) {
-          avg10 = recentEntries.reduce((sum, entry) => sum + entry.watts, 0) / recentEntries.length;
-        }
-
         return res.status(200).json({ aggregatedData, recent, avg10 });
+      } else {
+        // Otherwise, use the existing daily aggregated view.
+        let { date, hour } = req.query;
+        let startDate;
+        if (date) {
+          startDate = new Date(date);
+        } else {
+          startDate = new Date();
+          startDate.setHours(0, 0, 0, 0);
+        }
+
+        if (hour !== undefined) {
+          const hourNumber = parseInt(hour, 10);
+          let hourStart = new Date(startDate);
+          hourStart.setHours(hourNumber, 0, 0, 0);
+          let hourEnd = new Date(hourStart);
+          hourEnd.setHours(hourNumber + 1);
+
+          const powerData = await db
+            .collection('power')
+            .find({ timestamp: { $gte: hourStart, $lt: hourEnd } })
+            .sort({ timestamp: 1 })
+            .toArray();
+
+          const lastEntry = await db
+            .collection('power')
+            .findOne({}, { sort: { timestamp: -1 } });
+          let recent = 0;
+          if (lastEntry) {
+            const diffSec = (new Date() - new Date(lastEntry.timestamp)) / 1000;
+            if (diffSec < 10) recent = lastEntry.watts;
+          }
+          const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
+          const recentEntries = powerData.filter(entry => new Date(entry.timestamp) >= tenMinsAgo);
+          let avg10 = 0;
+          if (recentEntries.length > 0) {
+            avg10 = recentEntries.reduce((sum, entry) => sum + entry.watts, 0) / recentEntries.length;
+          }
+          return res.status(200).json({ powerData, recent, avg10 });
+        } else {
+          // Daily aggregated view (one value per hour in IST)
+          let dayStart = new Date(startDate);
+          dayStart.setHours(0, 0, 0, 0);
+          let dayEnd = new Date(dayStart);
+          dayEnd.setDate(dayEnd.getDate() + 1);
+
+          const allData = await db
+            .collection('power')
+            .find({ timestamp: { $gte: dayStart, $lt: dayEnd } })
+            .toArray();
+
+          const aggregatedData = [];
+          for (let hr = 0; hr < 24; hr++) {
+            const records = allData.filter(entry => {
+              const istHour = Number(
+                new Date(entry.timestamp)
+                  .toLocaleString("en-US", { hour: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })
+              );
+              return istHour === hr;
+            });
+            const avgWatts =
+              records.length > 0
+                ? records.reduce((sum, rec) => sum + rec.watts, 0) / records.length
+                : 0;
+            aggregatedData.push({ hour: hr, avgWatts });
+          }
+
+          const lastEntry = await db
+            .collection('power')
+            .findOne({}, { sort: { timestamp: -1 } });
+          let recent = 0;
+          if (lastEntry) {
+            const diffSec = (new Date() - new Date(lastEntry.timestamp)) / 1000;
+            if (diffSec < 10) recent = lastEntry.watts;
+          }
+          const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
+          const recentEntries = allData.filter(
+            entry => new Date(entry.timestamp) >= tenMinsAgo
+          );
+          let avg10 = 0;
+          if (recentEntries.length > 0) {
+            avg10 = recentEntries.reduce((sum, entry) => sum + entry.watts, 0) / recentEntries.length;
+          }
+          return res.status(200).json({ aggregatedData, recent, avg10 });
+        }
       }
     } catch (error) {
       console.error("GET /api/power error:", error);
