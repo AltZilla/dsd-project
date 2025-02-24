@@ -37,7 +37,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchDailyData();
-    const interval = setInterval(fetchDailyData, 5000);
+    const interval = setInterval(fetchDailyData, 2000);
     return () => clearInterval(interval);
   }, [timeLimit]);
 
