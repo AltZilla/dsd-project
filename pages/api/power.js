@@ -11,28 +11,40 @@ export default async function handler(req, res) {
     try {
       const { watts } = req.body;
       const now = new Date();
-      const newEntry = {
-        watts: Number(watts),
-        timestamp: now,
-      };
-
-      recent = Number(watts);
-      recent_date = now;
 
       const lastEntry = await db
         .collection('power')
         .findOne({}, { sort: { timestamp: -1 } });
+
+      let energy = 0; // Energy in kWh
+
       if (lastEntry) {
         const lastTime = new Date(lastEntry.timestamp);
+        const timeDiffSeconds = (now - lastTime) / 1000; // Time difference in seconds
+
+        // Calculate energy for the time difference
+        energy = (lastEntry.watts * timeDiffSeconds) / (3600 * 1000); // Convert to kWh
+
         if (Math.floor(lastTime.getTime() / 60000) === Math.floor(now.getTime() / 60000)) {
+          // If the record exists for the current minute, update it
           const updatedWatts = (lastEntry.watts + Number(watts)) / 2;
           await db.collection('power').updateOne(
             { _id: lastEntry._id },
-            { $set: { watts: updatedWatts, timestamp: now } }
+            {
+              $set: { watts: updatedWatts, timestamp: now },
+              $inc: { energy }, // Increment energy
+            }
           );
           return res.status(200).json({ success: true });
         }
       }
+
+      // Create a new record with the calculated energy
+      const newEntry = {
+        watts: Number(watts),
+        timestamp: now,
+        energy, // Store energy in kWh
+      };
 
       await db.collection('power').insertOne(newEntry);
 
@@ -53,6 +65,7 @@ export default async function handler(req, res) {
 
         const records = await db.collection('power')
           .find({ timestamp: { $gte: startTime } })
+          .sort({ timestamp: 1 }) // Ensure records are sorted by time
           .toArray();
 
         const grouped = {};
@@ -79,14 +92,10 @@ export default async function handler(req, res) {
         const diffSec = (new Date() - recent_date) / 1000;
         if (diffSec < 10) recentPower = recent;
 
-        const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
-        const recentEntries = records.filter(entry => new Date(entry.timestamp) >= tenMinsAgo);
-        let avg10 = 0;
-        if (recentEntries.length > 0) {
-          avg10 = recentEntries.reduce((sum, entry) => sum + entry.watts, 0) / recentEntries.length;
-        }
+        // Calculate total energy in kWh
+        const totalEnergy = records.reduce((sum, entry) => sum + (entry.energy || 0), 0);
 
-        return res.status(200).json({ aggregatedData, recent: recentPower, avg10 });
+        return res.status(200).json({ aggregatedData, recent: recentPower, totalEnergy });
       } else {
         let { date, hour } = req.query;
         let startDate;
@@ -117,13 +126,7 @@ export default async function handler(req, res) {
           const diffSec = (new Date() - recent_date) / 1000;
           if (diffSec < 10) recentPower = recent;
 
-          const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
-          const recentEntries = powerData.filter(entry => new Date(entry.timestamp) >= tenMinsAgo);
-          let avg10 = 0;
-          if (recentEntries.length > 0) {
-            avg10 = recentEntries.reduce((sum, entry) => sum + entry.watts, 0) / recentEntries.length;
-          }
-          return res.status(200).json({ powerData, recent: recentPower, avg10 });
+          return res.status(200).json({ powerData, recent: recentPower });
         } else {
           let dayStart = new Date(startDate);
           dayStart.setHours(0, 0, 0, 0);
@@ -158,15 +161,7 @@ export default async function handler(req, res) {
           const diffSec = (new Date() - recent_date) / 1000;
           if (diffSec < 10) recentPower = recent;
 
-          const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
-          const recentEntries = allData.filter(
-            entry => new Date(entry.timestamp) >= tenMinsAgo
-          );
-          let avg10 = 0;
-          if (recentEntries.length > 0) {
-            avg10 = recentEntries.reduce((sum, entry) => sum + entry.watts, 0) / recentEntries.length;
-          }
-          return res.status(200).json({ aggregatedData, recent: recentPower, avg10 });
+          return res.status(200).json({ aggregatedData, recent: recentPower });
         }
       }
     } catch (error) {
