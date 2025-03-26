@@ -32,7 +32,7 @@ export default async function handler(req, res) {
 
         timeDiffSeconds = Math.min(timeDiffSeconds, 120);
 
-        energy = (lastEntry.watts * timeDiffSeconds) / (3600 * 1000); 
+        energy = (watts * timeDiffSeconds) / (3600 * 1000); 
 
         if (Math.floor(lastTime.getTime() / 60000) === Math.floor(now.getTime() / 60000)) {
           // If the record exists for the current minute, update it
