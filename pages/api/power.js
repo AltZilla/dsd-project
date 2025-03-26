@@ -16,14 +16,15 @@ export default async function handler(req, res) {
         .collection('power')
         .findOne({}, { sort: { timestamp: -1 } });
 
-      let energy = 0; // Energy in kWh
+      let energy = 0;
 
       if (lastEntry) {
         const lastTime = new Date(lastEntry.timestamp);
-        const timeDiffSeconds = (now - lastTime) / 1000; // Time difference in seconds
+        let timeDiffSeconds = (now - lastTime) / 1000;
 
-        // Calculate energy for the time difference
-        energy = (lastEntry.watts * timeDiffSeconds) / (3600 * 1000); // Convert to kWh
+        timeDiffSeconds = min(timeDiffSeconds, 120);
+
+        energy = (lastEntry.watts * timeDiffSeconds) / (3600 * 1000); 
 
         if (Math.floor(lastTime.getTime() / 60000) === Math.floor(now.getTime() / 60000)) {
           // If the record exists for the current minute, update it
@@ -35,11 +36,14 @@ export default async function handler(req, res) {
               $inc: { energy }, // Increment energy
             }
           );
+
+          recent = updatedWatts;
+          recent_date = now;
+
           return res.status(200).json({ success: true });
         }
       }
 
-      // Create a new record with the calculated energy
       const newEntry = {
         watts: Number(watts),
         timestamp: now,
@@ -48,8 +52,9 @@ export default async function handler(req, res) {
 
       await db.collection('power').insertOne(newEntry);
 
-      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      await db.collection('power').deleteMany({ timestamp: { $lt: oneDayAgo } });
+      // Update recent variables
+      recent = Number(watts);
+      recent_date = now;
 
       res.status(200).json({ success: true });
     } catch (error) {
