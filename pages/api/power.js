@@ -11,6 +11,14 @@ export default async function handler(req, res) {
     try {
       const { watts } = req.body;
       const now = new Date();
+      const newEntry = {
+        watts: Number(watts),
+        timestamp: now,
+        energy,
+      };
+
+      recent = Number(watts);
+      recent_date = now;
 
       const lastEntry = await db
         .collection('power')
@@ -37,24 +45,11 @@ export default async function handler(req, res) {
             }
           );
 
-          recent = updatedWatts;
-          recent_date = now;
-
           return res.status(200).json({ success: true });
         }
       }
 
-      const newEntry = {
-        watts: Number(watts),
-        timestamp: now,
-        energy, // Store energy in kWh
-      };
-
       await db.collection('power').insertOne(newEntry);
-
-      // Update recent variables
-      recent = Number(watts);
-      recent_date = now;
 
       res.status(200).json({ success: true });
     } catch (error) {
