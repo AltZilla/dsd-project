@@ -8,10 +8,10 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 export default function Home() {
   const [aggregatedData, setAggregatedData] = useState([]);
   const [recentPower, setRecentPower] = useState(0);
-  const [avgPower10, setAvgPower10] = useState(0);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [timeLimit, setTimeLimit] = useState(1); 
   const [darkMode, setDarkMode] = useState(false);
+  const [totalEnergy, setTotalEnergy] = useState(0);
   const chartRef = useRef(null);
 
   useEffect(() => {
@@ -28,7 +28,7 @@ export default function Home() {
       const data = await res.json();
       setAggregatedData(data.aggregatedData);
       setRecentPower(data.recent);
-      setAvgPower10(data.avg10);
+      setTotalEnergy(data.totalEnergy);
       setLastUpdated(new Date());
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -135,7 +135,6 @@ export default function Home() {
   const displayedPeak = aggregatedData.length > 0 ? Math.max(...aggregatedData.map(d => d.avgWatts)) : 0;
   const maxPowerValue = 5000;
   const percentRecent = Math.min((recentPower / maxPowerValue) * 100, 100);
-  const percentAvg = Math.min((avgPower10 / maxPowerValue) * 100, 100);
 
   return (
     <div className={darkMode ? "dark" : ""}>
@@ -222,15 +221,15 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            <Card className="hover:shadow-lg transition-shadow duration-300" title="10-Minute Average Power">
+            <Card className="hover:shadow-lg transition-shadow duration-300" title="Total Energy Used">
               <CardHeader>
-                <CardTitle>10-Minute Average Power</CardTitle>
+                <CardTitle>Total Energy Used</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col items-center justify-center space-y-4">
                 <div style={{ width: 150, height: 150, transition: "all 0.5s ease-in-out" }}>
                   <CircularProgressbar
-                    value={percentAvg}
-                    text={`${avgPower10 ? avgPower10.toFixed(0) : 0}W`}
+                    value={Math.min((totalEnergy / maxPowerValue) * 100, 100)}
+                    text={`${totalEnergy ? totalEnergy.toFixed(2) : 0} kWh`}
                     styles={buildStyles({
                       pathColor: "#4caf50",
                       textColor: darkMode ? "#fff" : "#333",
@@ -240,7 +239,7 @@ export default function Home() {
                   />
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-300">
-                  Average computed from the last 10 minutes.
+                  Total energy used in the selected time limit.
                 </p>
               </CardContent>
             </Card>
