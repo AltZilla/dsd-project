@@ -11,6 +11,8 @@ export default async function handler(req, res) {
     try {
       const { watts } = req.body;
       const now = new Date();
+      let energy = watts / (3600 * 1000);
+      
       const newEntry = {
         watts: Number(watts),
         timestamp: now,
@@ -23,8 +25,6 @@ export default async function handler(req, res) {
       const lastEntry = await db
         .collection('power')
         .findOne({}, { sort: { timestamp: -1 } });
-
-      let energy = 0;
 
       if (lastEntry) {
         const lastTime = new Date(lastEntry.timestamp);
