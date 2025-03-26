@@ -22,7 +22,7 @@ export default async function handler(req, res) {
         const lastTime = new Date(lastEntry.timestamp);
         let timeDiffSeconds = (now - lastTime) / 1000;
 
-        timeDiffSeconds = min(timeDiffSeconds, 120);
+        timeDiffSeconds = Math.min(timeDiffSeconds, 120);
 
         energy = (lastEntry.watts * timeDiffSeconds) / (3600 * 1000); 
 
