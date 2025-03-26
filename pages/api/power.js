@@ -97,72 +97,7 @@ export default async function handler(req, res) {
 
         return res.status(200).json({ aggregatedData, recent: recentPower, totalEnergy });
       } else {
-        let { date, hour } = req.query;
-        let startDate;
-        if (date) {
-          startDate = new Date(date);
-        } else {
-          startDate = new Date();
-          startDate.setHours(0, 0, 0, 0);
-        }
-
-        if (hour !== undefined) {
-          const hourNumber = parseInt(hour, 10);
-          let hourStart = new Date(startDate);
-          hourStart.setHours(hourNumber, 0, 0, 0);
-          let hourEnd = new Date(hourStart);
-          hourEnd.setHours(hourNumber + 1);
-
-          const powerData = await db
-            .collection('power')
-            .find({ timestamp: { $gte: hourStart, $lt: hourEnd } })
-            .sort({ timestamp: 1 })
-            .toArray();
-
-          const lastEntry = await db
-            .collection('power')
-            .findOne({}, { sort: { timestamp: -1 } });
-          let recentPower = 0;
-          const diffSec = (new Date() - recent_date) / 1000;
-          if (diffSec < 10) recentPower = recent;
-
-          return res.status(200).json({ powerData, recent: recentPower });
-        } else {
-          let dayStart = new Date(startDate);
-          dayStart.setHours(0, 0, 0, 0);
-          let dayEnd = new Date(dayStart);
-          dayEnd.setDate(dayEnd.getDate() + 1);
-
-          const allData = await db
-            .collection('power')
-            .find({ timestamp: { $gte: dayStart, $lt: dayEnd } })
-            .toArray();
-
-          const aggregatedData = [];
-          for (let hr = 0; hr < 24; hr++) {
-            const records = allData.filter(entry => {
-              const istHour = Number(
-                new Date(entry.timestamp)
-                  .toLocaleString("en-US", { hour: "2-digit", hour12: false, timeZone: "Asia/Kolkata" })
-              );
-              return istHour === hr;
-            });
-            const avgWatts =
-              records.length > 0
-                ? records.reduce((sum, rec) => sum + rec.watts, 0) / records.length
-                : 0;
-            aggregatedData.push({ hour: hr, avgWatts });
-          }
-
-          const lastEntry = await db
-            .collection('power')
-            .findOne({}, { sort: { timestamp: -1 } });
-          let recentPower = 0;
-          const diffSec = (new Date() - recent_date) / 1000;
-          if (diffSec < 10) recentPower = recent;
-
-          return res.status(200).json({ aggregatedData, recent: recentPower });
-        }
+        res.status(400).json({ error: 'Limit parameter is required' });
       }
     } catch (error) {
       console.error("GET /api/power error:", error);
