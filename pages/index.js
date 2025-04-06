@@ -1,29 +1,56 @@
-import React, { useEffect, useState, useRef } from "react";
-import { Line } from "react-chartjs-2";
-import { Chart as ChartJS, registerables } from "chart.js";
-import zoomPlugin from "chartjs-plugin-zoom";
+import React, { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { CircularProgressbar, buildStyles } from "react-circular-progressbar";
 import "react-circular-progressbar/dist/styles.css";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
-ChartJS.register(...registerables, zoomPlugin);
+const ApexChartsComponent = dynamic(() => import("react-apexcharts"), { ssr: false });
+let ApexCharts; // Declare ApexCharts but do not import it directly
+
+if (typeof window !== "undefined") {
+  ApexCharts = require("apexcharts"); // Dynamically require ApexCharts only on the client side
+}
 
 export default function Home() {
   const [aggregatedData, setAggregatedData] = useState([]);
   const [recentPower, setRecentPower] = useState(0);
   const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [timeLimit, setTimeLimit] = useState(1); 
+  const [timeLimit, setTimeLimit] = useState(1);
   const [totalEnergy, setTotalEnergy] = useState(0);
-  const chartRef = useRef(null);
+
+  const timeRanges = [
+    { label: "1H", value: 1 },
+    { label: "6H", value: 6 },
+    { label: "12H", value: 12 },
+    { label: "1D", value: 24 },
+    { label: "3D", value: 72 },
+    { label: "1W", value: 168 },
+  ];
 
   const fetchDailyData = async () => {
     try {
       const res = await fetch(`/api/power?limit=${timeLimit}`);
       const data = await res.json();
       setAggregatedData(data.aggregatedData);
-      setRecentPower(data.recent);
-      setTotalEnergy(data.totalEnergy);
+
+      // Use recent power and total energy directly from the API response
+      setRecentPower(data.recent || 0); // Ensure recentPower is set even if undefined
+      setTotalEnergy(data.totalEnergy || 0);
+
       setLastUpdated(new Date());
+
+      // Ensure ApexCharts.exec is only called on the client side
+      if (ApexCharts) {
+        ApexCharts.exec("area-datetime", "updateSeries", [
+          {
+            name: "Avg Power (W)",
+            data: data.aggregatedData.map((d) => [
+              new Date(d.timestamp).getTime(),
+              parseFloat(d.avgWatts.toFixed(2)), // Limit to 2 decimal places
+            ]),
+          },
+        ]);
+      }
     } catch (error) {
       console.error("Error fetching data:", error);
     }
@@ -35,91 +62,90 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [timeLimit]);
 
-  const chartData = {
-    labels: aggregatedData.map(d => {
-      const date = new Date(d.timestamp);
-      return date.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      });
-    }),
-    datasets: [
-      {
-        label: "Avg Power (W)",
-        data: aggregatedData.map(d => parseFloat(d.avgWatts.toFixed(2))),
-        borderColor: "#4fd1c5",
-        backgroundColor: "transparent",
-        tension: 0.3,
-        pointRadius: 5,
-        pointHoverRadius: 7,
-      },
-    ],
-  };
-
   const chartOptions = {
-    responsive: true,
-    scales: {
-      y: { beginAtZero: true },
-      x: {
-        ticks: {
-          maxRotation: 45,
-          minRotation: 45,
-          callback: function(value, index, values) {
-            const totalLabels = values.length;
-            let step = 1;
-            let formatOptions = { hour: "2-digit", minute: "2-digit", hour12: true };
-
-            if (timeLimit > 6) {
-              if (totalLabels > 40) {
-                step = Math.ceil(totalLabels / 20);
-                formatOptions = { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true };
-              } else if (totalLabels > 20) {
-                step = 2;
-                formatOptions = { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true };
-              } else if (totalLabels > 10) {
-                formatOptions = { day: "numeric", hour: "2-digit", minute: "2-digit", hour12: true };
-              }
-            } else {
-              if (totalLabels > 40) {
-                step = Math.ceil(totalLabels / 20);
-              } else if (totalLabels > 20) {
-                step = 2;
-              }
-            }
-
-            if (index % step === 0) {
-              const date = new Date(aggregatedData[index].timestamp);
-              return date.toLocaleString([], formatOptions);
-            }
-            return '';
-          }
-        }
-      }
-    },
-    animation: { duration: 1000 },
-    plugins: {
+    chart: {
+      id: "area-datetime",
+      type: "area",
+      height: 350,
       zoom: {
-        pan: { enabled: true, mode: 'x' },
-        zoom: {
-          wheel: { enabled: true },
-          pinch: { enabled: true },
-          mode: 'x',
+        enabled: false,
+      },
+      animations: {
+        enabled: false,
+      },
+    },
+    xaxis: {
+      type: "datetime",
+      labels: {
+        formatter: function (value, timestamp) {
+          const date = new Date(timestamp);
+          return date.toLocaleString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true,
+          }); // Format timestamps in local time
+        },
+        style: {
+          colors: "#ffffff",
         },
       },
-      tooltip: {
-        callbacks: {
-          label: function(context) {
-            return `Avg Power: ${context.raw} W`;
-          }
-        }
-      }
+    },
+    yaxis: {
+      title: {
+        text: "Avg Power (W)",
+        style: {
+          color: "#ffffff",
+        },
+      },
+      labels: {
+        formatter: function (value) {
+          return value.toFixed(2); // Limit accuracy to 2 decimal places
+        },
+        style: {
+          colors: "#ffffff",
+        },
+      },
+      min: 0,
+    },
+    tooltip: {
+      x: {
+        format: "dd MMM yyyy HH:mm",
+      },
+      y: {
+        formatter: function (value) {
+          return value.toFixed(2); // Limit accuracy to 2 decimal places
+        },
+      },
+    },
+    fill: {
+      type: "gradient",
+      gradient: {
+        shadeIntensity: 1,
+        opacityFrom: 0.7,
+        opacityTo: 0.9,
+        stops: [0, 100],
+      },
     },
   };
 
-  const displayedPeak = aggregatedData.length > 0 ? Math.max(...aggregatedData.map(d => d.avgWatts)) : 0;
-  const maxPowerValue = 5000;
-  const percentRecent = Math.min((recentPower / maxPowerValue) * 100, 100);
+  const chartSeries = aggregatedData.length
+    ? [
+        {
+          name: "Avg Power (W)",
+          data: aggregatedData.map((d) => [
+            new Date(d.timestamp).getTime(), // Ensure timestamp is in local time
+            parseFloat(d.avgWatts.toFixed(2)), // Limit to 2 decimal places
+          ]),
+        },
+      ]
+    : [
+        {
+          name: "Avg Power (W)",
+          data: [],
+        },
+      ];
+
+  const displayedPeak = aggregatedData.length > 0 ? Math.max(...aggregatedData.map((d) => d.avgWatts)) : 0;
 
   return (
     <div className="dark min-h-screen bg-gray-800 transition-colors duration-500">
@@ -127,7 +153,7 @@ export default function Home() {
         <div className="flex flex-col md:flex-row md:justify-between md:items-center space-y-4 md:space-y-0">
           <div className="flex flex-col space-y-1">
             <div className="text-sm text-gray-300">
-              Last updated: {new Date().toLocaleTimeString([], {
+              Last updated: {lastUpdated.toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",
                 second: "2-digit",
@@ -135,22 +161,20 @@ export default function Home() {
               })}
             </div>
             <div className="flex items-center space-x-4">
-              <div className="flex flex-col">
-                <span className="text-sm text-gray-300">
-                  Time Limit (hours):
-                </span>
-                <select
-                  value={timeLimit}
-                  onChange={(e) => setTimeLimit(Number(e.target.value))}
-                  className="p-2 rounded shadow border"
-                >
-                  <option value={1}>Last 1 Hour</option>
-                  <option value={6}>Last 6 Hours</option>
-                  <option value={12}>Last 12 Hours</option>
-                  <option value={24}>Last 24 Hours</option>
-                  <option value={72}>Last 3 Days</option>
-                  <option value={168}>Last 1 Week</option>
-                </select>
+              <div className="flex space-x-2">
+                {timeRanges.map((range) => (
+                  <button
+                    key={range.value}
+                    onClick={() => setTimeLimit(range.value)}
+                    className={`px-4 py-2 rounded shadow ${
+                      timeLimit === range.value
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                    } transition-colors`}
+                  >
+                    {range.label}
+                  </button>
+                ))}
               </div>
               <button
                 onClick={fetchDailyData}
@@ -169,7 +193,12 @@ export default function Home() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Line data={chartData} options={chartOptions} ref={chartRef} />
+            <ApexChartsComponent
+              options={chartOptions}
+              series={chartSeries}
+              type="area"
+              height={350}
+            />
           </CardContent>
         </Card>
 
@@ -181,8 +210,8 @@ export default function Home() {
             <CardContent className="flex flex-col items-center justify-center space-y-4">
               <div style={{ width: 150, height: 150, transition: "all 0.5s ease-in-out" }}>
                 <CircularProgressbar
-                  value={percentRecent}
-                  text={`${recentPower ? recentPower.toFixed(0) : 0}W`}
+                  value={recentPower}
+                  text={`${recentPower ? recentPower.toFixed(0) : 0}W`} // Display the actual value
                   styles={buildStyles({
                     pathColor: "#f88",
                     textColor: "#fff",
@@ -191,9 +220,7 @@ export default function Home() {
                   })}
                 />
               </div>
-              <p className="text-sm text-gray-300">
-                If no update in 10 seconds, it shows 0W.
-              </p>
+              <p className="text-sm text-gray-300">If no update in 10 seconds, it shows 0W.</p>
             </CardContent>
           </Card>
 
@@ -204,8 +231,8 @@ export default function Home() {
             <CardContent className="flex flex-col items-center justify-center space-y-4">
               <div style={{ width: 150, height: 150, transition: "all 0.5s ease-in-out" }}>
                 <CircularProgressbar
-                  value={Math.min((totalEnergy / maxPowerValue) * 100, 100)}
-                  text={`${totalEnergy ? totalEnergy.toFixed(2) : 0} kWh`}
+                  value={totalEnergy}
+                  text={`${totalEnergy ? totalEnergy.toFixed(2) : 0} kWh`} // Display the actual value
                   styles={buildStyles({
                     pathColor: "#4caf50",
                     textColor: "#fff",
@@ -214,9 +241,7 @@ export default function Home() {
                   })}
                 />
               </div>
-              <p className="text-sm text-gray-300">
-                Total energy used in the selected time limit.
-              </p>
+              <p className="text-sm text-gray-300">Total energy used in the selected time limit.</p>
             </CardContent>
           </Card>
         </div>
