@@ -71,19 +71,39 @@ export default function Home() {
         enabled: false,
       },
       animations: {
-        enabled: false,
+        enabled: true,
+        delay: 1000,
       },
+    },
+    dataLabels: {
+      enabled: false,
+    },
+    stroke: {
+      curve: "smooth",
+      width: 2.5, // Make the line thinner
     },
     xaxis: {
       type: "datetime",
       labels: {
         formatter: function (value, timestamp) {
           const date = new Date(timestamp);
-          return date.toLocaleString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: true,
-          }); // Format timestamps in local time
+          if (timeLimit > 24) {
+            // Show date and time for ranges greater than 1 day
+            return date.toLocaleString([], {
+              month: "short",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+            });
+          } else {
+            // Show only time for ranges within 1 day
+            return date.toLocaleString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+            });
+          }
         },
         style: {
           colors: "#ffffff",
@@ -108,6 +128,11 @@ export default function Home() {
       min: 0,
     },
     tooltip: {
+      theme: "dark", // Set tooltip theme to dark
+      style: {
+        fontSize: "12px",
+        fontFamily: undefined,
+      },
       x: {
         format: "dd MMM yyyy HH:mm",
       },
