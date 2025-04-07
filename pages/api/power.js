@@ -26,27 +26,13 @@ export default async function handler(req, res) {
         .collection('power')
         .findOne({}, { sort: { timestamp: -1 } });
 
-      if (lastEntry) {
-        const lastTime = new Date(lastEntry.timestamp);
-        let timeDiffSeconds = (now - lastTime) / 1000;
-
-        timeDiffSeconds = Math.min(timeDiffSeconds, 120);
-
-        energy = (watts * timeDiffSeconds) / (3600 * 1000); 
-
-        if (Math.floor(lastTime.getTime() / 60000) === Math.floor(now.getTime() / 60000)) {
-          // If the record exists for the current minute, update it
+        if (lastEntry && Math.floor(new Date(lastEntry.timestamp).getTime() / 60000) === Math.floor(now.getTime() / 60000)) {
           const updatedWatts = (lastEntry.watts + Number(watts)) / 2;
           await db.collection('power').updateOne(
             { _id: lastEntry._id },
-            {
-              $set: { watts: updatedWatts, timestamp: now },
-              $inc: { energy }, // Increment energy
-            }
+            { $set: { watts: updatedWatts, timestamp: now }, $inc: { energy } }
           );
-
           return res.status(200).json({ success: true });
-        }
       }
 
       await db.collection('power').insertOne(newEntry);
