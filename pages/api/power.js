@@ -68,25 +68,10 @@ export default async function handler(req, res) {
           .sort({ timestamp: 1 }) // Ensure records are sorted by time
           .toArray();
 
-        const grouped = {};
-        records.forEach(entry => {
-          const date = new Date(entry.timestamp);
-          const key = date.getHours().toString().padStart(2, '0') + ":" +
-                      date.getMinutes().toString().padStart(2, '0');
-          if (!grouped[key]) {
-            grouped[key] = { sum: 0, count: 0, timestamp: date };
-          }
-          grouped[key].sum += entry.watts;
-          grouped[key].count++;
-        });
-
-        const aggregatedData = Object.keys(grouped)
-          .map(key => ({
-            label: key,
-            avgWatts: grouped[key].sum / grouped[key].count,
-            timestamp: grouped[key].timestamp
-          }))
-          .sort((a, b) => a.timestamp - b.timestamp);
+        const aggregatedData = records.map(entry => ({
+          avgWatts: entry.watts,
+          timestamp: entry.timestamp
+        }));
 
         let recentPower = 0;
         const diffSec = (new Date() - recent_date) / 1000;
