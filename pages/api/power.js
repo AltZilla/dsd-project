@@ -55,11 +55,19 @@ export default async function handler(req, res) {
           .toArray();
 
         let aggregatedData;
+        let interval = 1; // Default interval in minutes
+
         if (records.length > 1000) {
+          interval = 10; // Group by 10-minute intervals
+        } else if (records.length > 500) {
+          interval = 5; // Group by 5-minute intervals
+        }
+
+        if (interval > 1) {
           const grouped = {};
           records.forEach(entry => {
             const date = new Date(entry.timestamp);
-            const key = Math.floor(date.getTime() / (5 * 60 * 1000)); // Group by 5-minute intervals
+            const key = Math.floor(date.getTime() / (interval * 60 * 1000)); // Group by interval
             if (!grouped[key]) {
               grouped[key] = { sum: 0, count: 0, timestamp: date };
             }
