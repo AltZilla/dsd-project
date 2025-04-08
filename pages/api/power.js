@@ -51,19 +51,37 @@ export default async function handler(req, res) {
 
         const records = await db.collection('power')
           .find({ timestamp: { $gte: startTime } })
-          .sort({ timestamp: 1 }) // Ensure records are sorted by time
+          .sort({ timestamp: 1 })
           .toArray();
 
-        const aggregatedData = records.map(entry => ({
-          avgWatts: entry.watts,
-          timestamp: entry.timestamp
-        }));
+        let aggregatedData;
+        if (records.length > 1000) {
+          const grouped = {};
+          records.forEach(entry => {
+            const date = new Date(entry.timestamp);
+            const key = Math.floor(date.getTime() / (5 * 60 * 1000)); // Group by 5-minute intervals
+            if (!grouped[key]) {
+              grouped[key] = { sum: 0, count: 0, timestamp: date };
+            }
+            grouped[key].sum += entry.watts;
+            grouped[key].count++;
+          });
+
+          aggregatedData = Object.keys(grouped).map(key => ({
+            avgWatts: grouped[key].sum / grouped[key].count,
+            timestamp: grouped[key].timestamp
+          }));
+        } else {
+          aggregatedData = records.map(entry => ({
+            avgWatts: entry.watts,
+            timestamp: entry.timestamp
+          }));
+        }
 
         let recentPower = 0;
         const diffSec = (new Date() - recent_date) / 1000;
         if (diffSec < 10) recentPower = recent;
 
-        // Calculate total energy in kWh
         const totalEnergy = records.reduce((sum, entry) => sum + (entry.energy || 0), 0);
 
         return res.status(200).json({ aggregatedData, recent: recentPower, totalEnergy });
