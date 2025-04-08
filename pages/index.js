@@ -5,10 +5,10 @@ import "react-circular-progressbar/dist/styles.css";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
 const ApexChartsComponent = dynamic(() => import("react-apexcharts"), { ssr: false });
-let ApexCharts; // Declare ApexCharts but do not import it directly
+let ApexCharts;
 
 if (typeof window !== "undefined") {
-  ApexCharts = require("apexcharts"); // Dynamically require ApexCharts only on the client side
+  ApexCharts = require("apexcharts");
 }
 
 export default function Home() {
@@ -32,22 +32,15 @@ export default function Home() {
       const res = await fetch(`/api/power?limit=${timeLimit}`);
       const data = await res.json();
       setAggregatedData(data.aggregatedData);
-
-      // Use recent power and total energy directly from the API response
-      setRecentPower(data.recent || 0); // Ensure recentPower is set even if undefined
+      setRecentPower(data.recent || 0);
       setTotalEnergy(data.totalEnergy || 0);
-
       setLastUpdated(new Date());
 
-      // Ensure ApexCharts.exec is only called on the client side
       if (ApexCharts) {
         ApexCharts.exec("area-datetime", "updateSeries", [
           {
             name: "Avg Power (W)",
-            data: data.aggregatedData.map((d) => [
-              new Date(d.timestamp).getTime(),
-              parseFloat(d.avgWatts.toFixed(2)), // Limit to 2 decimal places
-            ]),
+            data: data.aggregatedData.map((d) => [new Date(d.timestamp).getTime(), d.avgWatts]),
           },
         ]);
       }
@@ -71,19 +64,37 @@ export default function Home() {
         enabled: false,
       },
       animations: {
-        enabled: false,
+        enabled: true,
+        delay: 1000,
       },
+    },
+    dataLabels: {
+      enabled: false,
+    },
+    stroke: {
+      curve: "smooth",
+      width: 2.5,
     },
     xaxis: {
       type: "datetime",
       labels: {
         formatter: function (value, timestamp) {
           const date = new Date(timestamp);
-          return date.toLocaleString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: true,
-          }); // Format timestamps in local time
+          if (timeLimit > 24) {
+            return date.toLocaleString([], {
+              month: "short",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+            });
+          } else {
+            return date.toLocaleString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true,
+            });
+          }
         },
         style: {
           colors: "#ffffff",
@@ -99,7 +110,7 @@ export default function Home() {
       },
       labels: {
         formatter: function (value) {
-          return value.toFixed(2); // Limit accuracy to 2 decimal places
+          return value.toFixed(2);
         },
         style: {
           colors: "#ffffff",
@@ -108,12 +119,17 @@ export default function Home() {
       min: 0,
     },
     tooltip: {
+      theme: "dark",
+      style: {
+        fontSize: "12px",
+        fontFamily: undefined,
+      },
       x: {
         format: "dd MMM yyyy HH:mm",
       },
       y: {
         formatter: function (value) {
-          return value.toFixed(2); // Limit accuracy to 2 decimal places
+          return value.toFixed(2);
         },
       },
     },
@@ -133,8 +149,8 @@ export default function Home() {
         {
           name: "Avg Power (W)",
           data: aggregatedData.map((d) => [
-            new Date(d.timestamp).getTime(), // Ensure timestamp is in local time
-            parseFloat(d.avgWatts.toFixed(2)), // Limit to 2 decimal places
+            new Date(d.timestamp).getTime(),
+            parseFloat(d.avgWatts.toFixed(2)),
           ]),
         },
       ]
@@ -211,7 +227,7 @@ export default function Home() {
               <div style={{ width: 150, height: 150, transition: "all 0.5s ease-in-out" }}>
                 <CircularProgressbar
                   value={recentPower}
-                  text={`${recentPower ? recentPower.toFixed(0) : 0}W`} // Display the actual value
+                  text={`${recentPower ? recentPower.toFixed(0) : 0}W`}
                   styles={buildStyles({
                     pathColor: "#f88",
                     textColor: "#fff",
@@ -232,7 +248,7 @@ export default function Home() {
               <div style={{ width: 150, height: 150, transition: "all 0.5s ease-in-out" }}>
                 <CircularProgressbar
                   value={totalEnergy}
-                  text={`${totalEnergy ? totalEnergy.toFixed(2) : 0} kWh`} // Display the actual value
+                  text={`${totalEnergy ? totalEnergy.toFixed(2) : 0} kWh`}
                   styles={buildStyles({
                     pathColor: "#4caf50",
                     textColor: "#fff",
