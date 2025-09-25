@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { CircularProgressbar, buildStyles } from "react-circular-progressbar";
 import "react-circular-progressbar/dist/styles.css";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import io from 'socket.io-client';
 
 const ApexChartsComponent = dynamic(() => import("react-apexcharts"), { 
   ssr: false,
@@ -18,23 +19,17 @@ if (typeof window !== "undefined") {
   ApexCharts = require("apexcharts");
 }
 
-const useInterval = (callback, delay) => {
-  useEffect(() => {
-    if (delay === null) return;
-    const interval = setInterval(callback, delay);
-    return () => clearInterval(interval);
-  }, [callback, delay]);
-};
-
 export default function Home() {
   const [aggregatedData, setAggregatedData] = useState([]);
   const [recentPower, setRecentPower] = useState(0);
+  const [voltage, setVoltage] = useState(0);
+  const [current, setCurrent] = useState(0);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [timeLimit, setTimeLimit] = useState(1);
   const [totalEnergy, setTotalEnergy] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [connectionStatus, setConnectionStatus] = useState('connected');
+  const [connectionStatus, setConnectionStatus] = useState('connecting');
 
   const timeRanges = [
     { label: "1H", value: 1 },
@@ -57,55 +52,65 @@ export default function Home() {
     [aggregatedData]
   );
 
-  const fetchDailyData = useCallback(async () => {
-    try {
-      setError(null);
-      setConnectionStatus('connecting');
-      
-      const res = await fetch(`/api/power?limit=${timeLimit}`);
-      
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
-      
-      const data = await res.json();
-      
-      setAggregatedData(data.aggregatedData || []);
-      setRecentPower(data.recent || 0);
-      setTotalEnergy(data.totalEnergy || 0);
-      setLastUpdated(new Date());
-      setConnectionStatus('connected');
+  useEffect(() => {
+    const socket = io();
 
-      if (ApexCharts && data.aggregatedData?.length > 0) {
+    socket.on('connect', () => {
+      setConnectionStatus('connected');
+      setIsLoading(false);
+    });
+
+    socket.on('disconnect', () => {
+      setConnectionStatus('disconnected');
+    });
+
+    socket.on('data', (data) => {
+      setRecentPower(parseFloat(data.power));
+      setVoltage(parseFloat(data.voltage));
+      setCurrent(parseFloat(data.current));
+      setLastUpdated(new Date());
+
+      const newAggregatedData = [...aggregatedData, {
+        avgWatts: parseFloat(data.power),
+        avgVoltage: parseFloat(data.voltage),
+        timestamp: new Date(data.timestamp),
+      }];
+
+      // Keep the data within the time limit
+      const now = new Date().getTime();
+      const limit = now - timeLimit * 3600 * 1000;
+      const filteredData = newAggregatedData.filter(d => new Date(d.timestamp).getTime() > limit);
+      setAggregatedData(filteredData);
+
+      if (ApexCharts) {
         ApexCharts.exec("glassmorphism-chart", "updateSeries", [
           {
             name: "Power Usage",
-            data: data.aggregatedData.map(d => [
+            data: filteredData.map(d => [
               new Date(d.timestamp).getTime(), 
               parseFloat(d.avgWatts.toFixed(2))
             ]),
           },
+          {
+            name: "Voltage",
+            data: filteredData.map(d => [
+              new Date(d.timestamp).getTime(), 
+              parseFloat(d.avgVoltage.toFixed(2))
+            ]),
+          },
         ]);
       }
-    } catch (error) {
-      console.error("Error fetching data:", error);
-      setError(error.message);
-      setConnectionStatus('disconnected');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [timeLimit]);
+    });
 
-  useInterval(fetchDailyData, 2000);
-
-  useEffect(() => {
-    fetchDailyData();
-  }, [timeLimit, fetchDailyData]);
+    return () => {
+      socket.disconnect();
+    };
+  }, [aggregatedData, timeLimit]);
 
   const chartOptions = useMemo(() => ({
     chart: {
       id: "glassmorphism-chart",
-      type: "area",
+      type: "line",
       height: 400,
       background: 'transparent',
       fontFamily: '"SF Pro Display", system-ui, sans-serif',
@@ -114,14 +119,15 @@ export default function Home() {
       animations: {
         enabled: true,
         easing: 'easeinout',
-        speed: 1200,
+        speed: 800,
       },
     },
     dataLabels: { enabled: false },
     stroke: {
       curve: "smooth",
-      width: 3,
-      colors: ['rgba(99, 102, 241, 0.8)'],
+      width: [3, 2],
+      colors: ['rgba(99, 102, 241, 0.8)', 'rgba(245, 158, 11, 0.8)'],
+      dashArray: [0, 5],
     },
     fill: {
       type: "gradient",
@@ -129,10 +135,10 @@ export default function Home() {
         shade: 'dark',
         type: 'vertical',
         shadeIntensity: 0.3,
-        gradientToColors: ['rgba(139, 92, 246, 0.4)'],
+        gradientToColors: ['rgba(139, 92, 246, 0.4)', 'transparent'],
         inverseColors: false,
-        opacityFrom: 0.7,
-        opacityTo: 0.1,
+        opacityFrom: [0.7, 0.1],
+        opacityTo: [0.1, 0.1],
         stops: [0, 90, 100],
       },
     },
@@ -161,31 +167,108 @@ export default function Home() {
       axisBorder: { show: false },
       axisTicks: { show: false },
     },
-    yaxis: {
-      labels: {
-        formatter: value => `${value.toFixed(0)}W`,
-        style: { 
-          colors: "rgba(255, 255, 255, 0.6)", 
-          fontSize: '11px',
-          fontWeight: 500 
+    yaxis: [
+      {
+        seriesName: 'Power Usage',
+        labels: {
+          formatter: value => `${value.toFixed(0)}W`,
+          style: { 
+            colors: "rgba(255, 255, 255, 0.6)", 
+            fontSize: '11px',
+            fontWeight: 500 
+          },
         },
+        min: 0,
       },
-      min: 0,
-    },
+      {
+        seriesName: 'Voltage',
+        opposite: true,
+        labels: {
+          formatter: value => `${value.toFixed(0)}V`,
+          style: { 
+            colors: "rgba(255, 255, 255, 0.6)", 
+            fontSize: '11px',
+            fontWeight: 500 
+          },
+        },
+        min: 200,
+        max: 250,
+      },
+    ],
     tooltip: {
-      enabled: false
+      enabled: true,
+      theme: 'dark',
+      x: {
+        format: 'dd MMM yyyy HH:mm',
+      },
     },
-    legend: { show: false },
-  }), [timeLimit]);
+    legend: { 
+      show: true,
+      position: 'top',
+      horizontalAlign: 'right',
+      floating: true,
+      offsetY: -25,
+      offsetX: -5,
+      labels: {
+        colors: 'rgba(255, 255, 255, 0.7)',
+      },
+    },
+    annotations: {
+      yaxis: [
+        {
+          y: averagePower,
+          borderColor: '#00E396',
+          label: {
+            borderColor: '#00E396',
+            style: {
+              color: '#fff',
+              background: '#00E396',
+            },
+            text: `Avg: ${averagePower.toFixed(1)}W`,
+          },
+        },
+      ],
+      points: [
+        {
+          x: new Date(aggregatedData[aggregatedData.length - 1]?.timestamp).getTime(),
+          y: displayedPeak,
+          marker: {
+            size: 8,
+            fillColor: '#FF4560',
+            strokeColor: '#fff',
+            radius: 2,
+          },
+          label: {
+            borderColor: '#FF4560',
+            offsetY: 0,
+            style: {
+              color: '#fff',
+              background: '#FF4560',
+            },
+            text: `Peak: ${displayedPeak.toFixed(1)}W`,
+          },
+        },
+      ],
+    },
+  }), [timeLimit, averagePower, displayedPeak, aggregatedData]);
 
   const chartSeries = useMemo(() => 
-    aggregatedData.length ? [{
-      name: "Power Usage",
-      data: aggregatedData.map(d => [
-        new Date(d.timestamp).getTime(),
-        parseFloat(d.avgWatts.toFixed(2)),
-      ]),
-    }] : [{ name: "Power Usage", data: [] }],
+    [
+      {
+        name: "Power Usage",
+        data: aggregatedData.map(d => [
+          new Date(d.timestamp).getTime(),
+          parseFloat(d.avgWatts.toFixed(2)),
+        ]),
+      },
+      {
+        name: "Voltage",
+        data: aggregatedData.map(d => [
+          new Date(d.timestamp).getTime(),
+          parseFloat(d.avgVoltage.toFixed(2)),
+        ]),
+      },
+    ],
     [aggregatedData]
   );
 
@@ -454,13 +537,13 @@ export default function Home() {
               <p className="glass-text-muted text-sm mt-2">Real-time consumption</p>
             </div>
 
-            {/* Total Energy */}
+            {/* Voltage */}
             <div className="glassmorphism-card rounded-3xl p-8 text-center">
               <div className="mb-4">
-                <h3 className="glass-text-secondary text-lg font-medium mb-2">Total Energy</h3>
+                <h3 className="glass-text-secondary text-lg font-medium mb-2">Voltage</h3>
                 <div className="circular-progress-glass mx-auto" style={{ width: 120, height: 120 }}>
                   <CircularProgressbar
-                    value={Math.min((totalEnergy / 10) * 100, 100)}
+                    value={Math.min((voltage / 240) * 100, 100)}
                     styles={buildStyles({
                       pathColor: "rgba(16, 185, 129, 0.8)",
                       textColor: "rgba(255, 255, 255, 0.95)",
@@ -470,17 +553,17 @@ export default function Home() {
                   />
                 </div>
               </div>
-              <div className="metric-value">{totalEnergy.toFixed(2)} kWh</div>
-              <p className="glass-text-muted text-sm mt-2">Energy consumed</p>
+              <div className="metric-value">{voltage.toFixed(2)}V</div>
+              <p className="glass-text-muted text-sm mt-2">Line voltage</p>
             </div>
 
-            {/* Peak Power */}
+            {/* Current */}
             <div className="glassmorphism-card rounded-3xl p-8 text-center">
               <div className="mb-4">
-                <h3 className="glass-text-secondary text-lg font-medium mb-2">Peak Power</h3>
+                <h3 className="glass-text-secondary text-lg font-medium mb-2">Current</h3>
                 <div className="circular-progress-glass mx-auto" style={{ width: 120, height: 120 }}>
                   <CircularProgressbar
-                    value={Math.min((displayedPeak / 200) * 100, 100)}
+                    value={Math.min((current / 10) * 100, 100)}
                     styles={buildStyles({
                       pathColor: "rgba(245, 158, 11, 0.8)",
                       textColor: "rgba(255, 255, 255, 0.95)",
@@ -490,8 +573,8 @@ export default function Home() {
                   />
                 </div>
               </div>
-              <div className="metric-value">{displayedPeak.toFixed(0)}W</div>
-              <p className="glass-text-muted text-sm mt-2">Maximum recorded</p>
+              <div className="metric-value">{current.toFixed(2)}A</div>
+              <p className="glass-text-muted text-sm mt-2">Amperage draw</p>
             </div>
 
             {/* Average Power */}
