@@ -4,12 +4,11 @@ import { CircularProgressbar, buildStyles } from "react-circular-progressbar";
 import "react-circular-progressbar/dist/styles.css";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
-// Dynamic imports for better performance
 const ApexChartsComponent = dynamic(() => import("react-apexcharts"), { 
   ssr: false,
   loading: () => (
-    <div className="flex items-center justify-center h-[350px] bg-gradient-to-br from-slate-900/50 to-slate-800/50 rounded-lg">
-      <div className="animate-spin rounded-full h-12 w-12 border-2 border-blue-500 border-t-transparent"></div>
+    <div className="flex items-center justify-center h-[400px] glassmorphism-card">
+      <div className="loading-spinner"></div>
     </div>
   )
 });
@@ -19,22 +18,6 @@ if (typeof window !== "undefined") {
   ApexCharts = require("apexcharts");
 }
 
-// Premium color palette
-const COLORS = {
-  primary: "#3b82f6",
-  secondary: "#8b5cf6",
-  accent: "#06d6a0",
-  warning: "#f59e0b",
-  danger: "#ef4444",
-  success: "#10b981",
-  background: {
-    primary: "from-slate-900 via-slate-800 to-slate-900",
-    card: "from-slate-800/80 to-slate-700/80",
-    glass: "rgba(255, 255, 255, 0.05)",
-  }
-};
-
-// Custom hooks for better performance
 const useInterval = (callback, delay) => {
   useEffect(() => {
     if (delay === null) return;
@@ -54,15 +37,14 @@ export default function Home() {
   const [connectionStatus, setConnectionStatus] = useState('connected');
 
   const timeRanges = [
-    { label: "1H", value: 1, icon: "🕐" },
-    { label: "6H", value: 6, icon: "🕕" },
-    { label: "12H", value: 12, icon: "🕙" },
-    { label: "1D", value: 24, icon: "📅" },
-    { label: "3D", value: 72, icon: "📊" },
-    { label: "1W", value: 168, icon: "📈" },
+    { label: "1H", value: 1 },
+    { label: "6H", value: 6 },
+    { label: "12H", value: 12 },
+    { label: "1D", value: 24 },
+    { label: "3D", value: 72 },
+    { label: "1W", value: 168 },
   ];
 
-  // Memoized calculations for performance
   const displayedPeak = useMemo(() => 
     aggregatedData.length > 0 ? Math.max(...aggregatedData.map(d => d.avgWatts)) : 0,
     [aggregatedData]
@@ -95,9 +77,9 @@ export default function Home() {
       setConnectionStatus('connected');
 
       if (ApexCharts && data.aggregatedData?.length > 0) {
-        ApexCharts.exec("area-datetime", "updateSeries", [
+        ApexCharts.exec("glassmorphism-chart", "updateSeries", [
           {
-            name: "Power (W)",
+            name: "Power Usage",
             data: data.aggregatedData.map(d => [
               new Date(d.timestamp).getTime(), 
               parseFloat(d.avgWatts.toFixed(2))
@@ -114,7 +96,6 @@ export default function Home() {
     }
   }, [timeLimit]);
 
-  // Auto-refresh every 2 seconds
   useInterval(fetchDailyData, 2000);
 
   useEffect(() => {
@@ -123,51 +104,43 @@ export default function Home() {
 
   const chartOptions = useMemo(() => ({
     chart: {
-      id: "area-datetime",
+      id: "glassmorphism-chart",
       type: "area",
-      height: 380,
+      height: 400,
       background: 'transparent',
-      fontFamily: 'Inter, system-ui, sans-serif',
-      zoom: { enabled: true },
-      toolbar: {
-        show: true,
-        tools: {
-          zoom: true,
-          zoomin: true,
-          zoomout: true,
-          pan: true,
-          reset: true,
-        }
-      },
+      fontFamily: '"SF Pro Display", system-ui, sans-serif',
+      zoom: { enabled: false },
+      toolbar: { show: false },
       animations: {
         enabled: true,
         easing: 'easeinout',
-        speed: 800,
+        speed: 1200,
       },
     },
     dataLabels: { enabled: false },
     stroke: {
       curve: "smooth",
       width: 3,
-      colors: [COLORS.primary],
+      colors: ['rgba(99, 102, 241, 0.8)'],
     },
     fill: {
       type: "gradient",
       gradient: {
         shade: 'dark',
         type: 'vertical',
-        shadeIntensity: 0.5,
-        gradientToColors: [COLORS.secondary],
+        shadeIntensity: 0.3,
+        gradientToColors: ['rgba(139, 92, 246, 0.4)'],
         inverseColors: false,
-        opacityFrom: 0.8,
+        opacityFrom: 0.7,
         opacityTo: 0.1,
-        stops: [0, 100],
+        stops: [0, 90, 100],
       },
     },
     grid: {
-      borderColor: 'rgba(255, 255, 255, 0.1)',
-      strokeDashArray: 3,
-      xaxis: { lines: { show: true } },
+      show: true,
+      borderColor: 'rgba(255, 255, 255, 0.08)',
+      strokeDashArray: 1,
+      xaxis: { lines: { show: false } },
       yaxis: { lines: { show: true } },
     },
     xaxis: {
@@ -179,262 +152,412 @@ export default function Home() {
             ? date.toLocaleString([], { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
             : date.toLocaleString([], { hour: "2-digit", minute: "2-digit" });
         },
-        style: { colors: "#e2e8f0", fontSize: '12px' },
+        style: { 
+          colors: "rgba(255, 255, 255, 0.6)", 
+          fontSize: '11px',
+          fontWeight: 500 
+        },
       },
-      axisBorder: { color: 'rgba(255, 255, 255, 0.2)' },
+      axisBorder: { show: false },
+      axisTicks: { show: false },
     },
     yaxis: {
-      title: {
-        text: "Power (W)",
-        style: { color: "#e2e8f0", fontSize: '14px', fontWeight: 600 },
-      },
       labels: {
-        formatter: value => `${value.toFixed(1)}W`,
-        style: { colors: "#e2e8f0", fontSize: '12px' },
+        formatter: value => `${value.toFixed(0)}W`,
+        style: { 
+          colors: "rgba(255, 255, 255, 0.6)", 
+          fontSize: '11px',
+          fontWeight: 500 
+        },
       },
       min: 0,
     },
     tooltip: {
-      theme: "dark",
-      style: { fontSize: "14px" },
-      custom: ({ series, seriesIndex, dataPointIndex, w }) => {
-        const value = series[seriesIndex][dataPointIndex];
-        const timestamp = w.globals.seriesX[seriesIndex][dataPointIndex];
-        return `
-          <div class="bg-slate-800 border border-slate-600 rounded-lg p-3 shadow-xl">
-            <div class="text-slate-300 text-sm">${new Date(timestamp).toLocaleString()}</div>
-            <div class="text-blue-400 font-semibold text-lg">${value.toFixed(2)}W</div>
-          </div>
-        `;
-      }
+      enabled: false
     },
     legend: { show: false },
   }), [timeLimit]);
 
   const chartSeries = useMemo(() => 
     aggregatedData.length ? [{
-      name: "Power (W)",
+      name: "Power Usage",
       data: aggregatedData.map(d => [
         new Date(d.timestamp).getTime(),
         parseFloat(d.avgWatts.toFixed(2)),
       ]),
-    }] : [{ name: "Power (W)", data: [] }],
+    }] : [{ name: "Power Usage", data: [] }],
     [aggregatedData]
   );
 
-  // Status indicator component
-  const StatusIndicator = () => (
-    <div className="flex items-center space-x-2">
-      <div className={`w-3 h-3 rounded-full ${
-        connectionStatus === 'connected' ? 'bg-green-500 animate-pulse' :
-        connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' :
-        'bg-red-500'
-      }`} />
-      <span className="text-sm text-slate-300 capitalize">{connectionStatus}</span>
-    </div>
-  );
-
-  // Premium metric card component
-  const MetricCard = ({ title, value, unit, color, icon, subtitle, progress }) => (
-    <Card className="group relative overflow-hidden border-0 bg-gradient-to-br from-slate-800/90 to-slate-700/90 backdrop-blur-sm hover:from-slate-800 hover:to-slate-700 transition-all duration-500 hover:scale-[1.02] hover:shadow-2xl hover:shadow-blue-500/10">
-      <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-      <CardHeader className="relative pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-slate-200 text-lg font-semibold">{title}</CardTitle>
-          <span className="text-2xl">{icon}</span>
-        </div>
-      </CardHeader>
-      <CardContent className="relative">
-        <div className="flex flex-col items-center space-y-4">
-          <div style={{ width: 140, height: 140 }}>
-            <CircularProgressbar
-              value={progress || value}
-              text={`${value}${unit}`}
-              styles={buildStyles({
-                pathColor: color,
-                textColor: "#f8fafc",
-                trailColor: "rgba(255, 255, 255, 0.1)",
-                textSize: "14px",
-                pathTransitionDuration: 0.8,
-              })}
-            />
-          </div>
-          {subtitle && (
-            <p className="text-sm text-slate-400 text-center leading-relaxed">{subtitle}</p>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      {/* Background effects */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -inset-10 opacity-50">
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full mix-blend-multiply filter blur-3xl animate-pulse" />
-          <div className="absolute top-3/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full mix-blend-multiply filter blur-3xl animate-pulse delay-1000" />
-        </div>
-      </div>
+    <>
+      <style jsx global>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body {
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+          overflow-x: hidden;
+        }
 
-      <div className="relative container mx-auto p-6 space-y-8">
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center space-y-6 lg:space-y-0">
-          <div className="space-y-2">
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
+        .glassmorphism-bg {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          min-height: 100vh;
+          position: relative;
+        }
+
+        .glassmorphism-bg::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: url('data:image/svg+xml,<svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"><g fill="none" fill-rule="evenodd"><g fill="rgba(255,255,255,0.03)" fill-opacity="0.4"><circle cx="30" cy="30" r="1.5"/></g></svg>');
+          pointer-events: none;
+        }
+
+        .floating-orb {
+          position: absolute;
+          border-radius: 50%;
+          filter: blur(40px);
+          animation: float 6s ease-in-out infinite;
+          pointer-events: none;
+        }
+
+        .floating-orb:nth-child(1) {
+          width: 300px;
+          height: 300px;
+          background: radial-gradient(circle, rgba(99, 102, 241, 0.3) 0%, transparent 70%);
+          top: 10%;
+          left: 10%;
+          animation-delay: 0s;
+        }
+
+        .floating-orb:nth-child(2) {
+          width: 200px;
+          height: 200px;
+          background: radial-gradient(circle, rgba(139, 92, 246, 0.3) 0%, transparent 70%);
+          top: 60%;
+          right: 20%;
+          animation-delay: 2s;
+        }
+
+        .floating-orb:nth-child(3) {
+          width: 250px;
+          height: 250px;
+          background: radial-gradient(circle, rgba(16, 185, 129, 0.2) 0%, transparent 70%);
+          bottom: 20%;
+          left: 30%;
+          animation-delay: 4s;
+        }
+
+        @keyframes float {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          33% { transform: translateY(-20px) rotate(120deg); }
+          66% { transform: translateY(10px) rotate(240deg); }
+        }
+
+        .glassmorphism-card {
+          background: rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .glassmorphism-card:hover {
+          background: rgba(255, 255, 255, 0.15);
+          transform: translateY(-5px);
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+          border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .glassmorphism-button {
+          background: rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          transition: all 0.3s ease;
+        }
+
+        .glassmorphism-button:hover {
+          background: rgba(255, 255, 255, 0.2);
+          transform: translateY(-2px);
+        }
+
+        .glassmorphism-button.active {
+          background: rgba(99, 102, 241, 0.3);
+          border-color: rgba(99, 102, 241, 0.5);
+          box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
+        }
+
+        .metric-value {
+          font-family: 'Inter', monospace;
+          font-weight: 700;
+          font-size: 2.5rem;
+          background: linear-gradient(135deg, #ffffff 0%, rgba(255,255,255,0.8) 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+        }
+
+        .status-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          animation: pulse 2s infinite;
+        }
+
+        .status-connected { background: #10b981; }
+        .status-connecting { background: #f59e0b; }
+        .status-disconnected { background: #ef4444; }
+
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+
+        .loading-spinner {
+          width: 40px;
+          height: 40px;
+          border: 3px solid rgba(255, 255, 255, 0.2);
+          border-top: 3px solid rgba(99, 102, 241, 0.8);
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+
+        .circular-progress-glass {
+          filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+        }
+
+        .insight-card {
+          background: rgba(255, 255, 255, 0.05);
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 16px;
+          padding: 1.5rem;
+          transition: all 0.3s ease;
+        }
+
+        .insight-card:hover {
+          background: rgba(255, 255, 255, 0.08);
+          transform: translateY(-3px);
+        }
+
+        .glass-text-primary {
+          color: rgba(255, 255, 255, 0.95);
+          font-weight: 600;
+        }
+
+        .glass-text-secondary {
+          color: rgba(255, 255, 255, 0.7);
+        }
+
+        .glass-text-muted {
+          color: rgba(255, 255, 255, 0.5);
+        }
+      `}</style>
+
+      <div className="glassmorphism-bg">
+        <div className="floating-orb"></div>
+        <div className="floating-orb"></div>
+        <div className="floating-orb"></div>
+        
+        <div className="relative z-10 container mx-auto p-8 space-y-8">
+          {/* Header */}
+          <div className="text-center space-y-4 mb-12">
+            <h1 className="text-6xl font-bold glass-text-primary">
               Power Monitor
             </h1>
-            <div className="flex items-center space-x-6">
-              <div className="text-sm text-slate-400">
-                Last updated: {lastUpdated.toLocaleTimeString([], {
+            <div className="flex items-center justify-center space-x-6 glass-text-secondary">
+              <div className="flex items-center space-x-2">
+                <div className={`status-dot status-${connectionStatus}`}></div>
+                <span className="text-sm font-medium capitalize">{connectionStatus}</span>
+              </div>
+              <div className="text-sm">
+                {lastUpdated.toLocaleTimeString([], {
                   hour: "2-digit", minute: "2-digit", second: "2-digit"
                 })}
               </div>
-              <StatusIndicator />
             </div>
           </div>
 
-          {/* Time range selector */}
-          <div className="flex flex-wrap gap-2">
-            {timeRanges.map((range) => (
-              <button
-                key={range.value}
-                onClick={() => setTimeLimit(range.value)}
-                className={`group relative px-4 py-2.5 rounded-xl font-medium transition-all duration-300 ${
-                  timeLimit === range.value
-                    ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/25"
-                    : "bg-slate-700/50 text-slate-300 hover:bg-slate-600/50 hover:text-white backdrop-blur-sm"
-                }`}
-              >
-                <span className="flex items-center space-x-2">
-                  <span>{range.icon}</span>
-                  <span>{range.label}</span>
-                </span>
-                {timeLimit === range.value && (
-                  <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 opacity-20 animate-pulse" />
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Error handling */}
-        {error && (
-          <Card className="border-red-500/50 bg-red-900/20">
-            <CardContent className="flex items-center space-x-3 p-4">
-              <span className="text-red-500 text-xl">⚠️</span>
-              <span className="text-red-300">Error loading data: {error}</span>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Main chart */}
-        <Card className="border-0 bg-gradient-to-br from-slate-800/90 to-slate-700/90 backdrop-blur-sm shadow-2xl">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-2xl font-semibold text-white flex items-center space-x-2">
-                <span>📊</span>
-                <span>Power Usage Timeline</span>
-              </CardTitle>
-              <div className="text-slate-400 text-sm">
-                Last {timeLimit} hour{timeLimit > 1 ? "s" : ""}
+          {/* Time Range Selector */}
+          <div className="flex justify-center mb-8">
+            <div className="glassmorphism-card rounded-2xl p-2">
+              <div className="flex space-x-2">
+                {timeRanges.map((range) => (
+                  <button
+                    key={range.value}
+                    onClick={() => setTimeLimit(range.value)}
+                    className={`glassmorphism-button px-6 py-3 rounded-xl font-medium text-white transition-all ${
+                      timeLimit === range.value ? 'active' : ''
+                    }`}
+                  >
+                    {range.label}
+                  </button>
+                ))}
               </div>
             </div>
-          </CardHeader>
-          <CardContent>
+          </div>
+
+          {/* Main Chart */}
+          <div className="glassmorphism-card rounded-3xl p-8 mb-8">
+            <div className="mb-6">
+              <h2 className="text-2xl font-semibold glass-text-primary text-center">
+                Power Usage Timeline
+              </h2>
+              <p className="glass-text-muted text-center mt-2">
+                Last {timeLimit} hour{timeLimit > 1 ? "s" : ""}
+              </p>
+            </div>
+            
             {isLoading ? (
-              <div className="flex items-center justify-center h-[380px]">
-                <div className="animate-spin rounded-full h-12 w-12 border-2 border-blue-500 border-t-transparent"></div>
+              <div className="flex items-center justify-center h-[400px]">
+                <div className="loading-spinner"></div>
               </div>
             ) : (
               <ApexChartsComponent
                 options={chartOptions}
                 series={chartSeries}
                 type="area"
-                height={380}
+                height={400}
               />
             )}
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* Metrics grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-          <MetricCard
-            title="Current Power"
-            value={recentPower.toFixed(0)}
-            unit="W"
-            color={COLORS.danger}
-            icon="⚡"
-            subtitle="Real-time power consumption"
-            progress={Math.min((recentPower / 100) * 100, 100)}
-          />
-          
-          <MetricCard
-            title="Total Energy"
-            value={totalEnergy.toFixed(2)}
-            unit=" kWh"
-            color={COLORS.success}
-            icon="🔋"
-            subtitle={`Energy used in last ${timeLimit}h`}
-            progress={Math.min((totalEnergy / 10) * 100, 100)}
-          />
-          
-          <MetricCard
-            title="Peak Power"
-            value={displayedPeak.toFixed(0)}
-            unit="W"
-            color={COLORS.warning}
-            icon="📈"
-            subtitle="Maximum power in period"
-            progress={Math.min((displayedPeak / 150) * 100, 100)}
-          />
-          
-          <MetricCard
-            title="Average Power"
-            value={averagePower.toFixed(1)}
-            unit="W"
-            color={COLORS.primary}
-            icon="📊"
-            subtitle="Mean consumption rate"
-            progress={Math.min((averagePower / 100) * 100, 100)}
-          />
-        </div>
-
-        {/* Data insights */}
-        {aggregatedData.length > 0 && (
-          <Card className="border-0 bg-gradient-to-br from-slate-800/90 to-slate-700/90 backdrop-blur-sm">
-            <CardHeader>
-              <CardTitle className="text-xl font-semibold text-white flex items-center space-x-2">
-                <span>💡</span>
-                <span>Insights</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                <div className="p-4 rounded-lg bg-slate-700/30">
-                  <div className="text-slate-300">Efficiency Score</div>
-                  <div className="text-2xl font-bold text-green-400">
-                    {averagePower > 0 ? Math.min(((100 - averagePower) / 100 * 100), 100).toFixed(0) : 0}%
-                  </div>
-                </div>
-                <div className="p-4 rounded-lg bg-slate-700/30">
-                  <div className="text-slate-300">Data Points</div>
-                  <div className="text-2xl font-bold text-blue-400">{aggregatedData.length}</div>
-                </div>
-                <div className="p-4 rounded-lg bg-slate-700/30">
-                  <div className="text-slate-300">Trend</div>
-                  <div className="text-2xl font-bold text-purple-400">
-                    {aggregatedData.length > 1 
-                      ? (aggregatedData[aggregatedData.length - 1].avgWatts > aggregatedData[0].avgWatts ? "📈" : "📉")
-                      : "➖"
-                    }
-                  </div>
+          {/* Metrics Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Current Power */}
+            <div className="glassmorphism-card rounded-3xl p-8 text-center">
+              <div className="mb-4">
+                <h3 className="glass-text-secondary text-lg font-medium mb-2">Current Power</h3>
+                <div className="circular-progress-glass mx-auto" style={{ width: 120, height: 120 }}>
+                  <CircularProgressbar
+                    value={Math.min((recentPower / 150) * 100, 100)}
+                    styles={buildStyles({
+                      pathColor: "rgba(239, 68, 68, 0.8)",
+                      textColor: "rgba(255, 255, 255, 0.95)",
+                      trailColor: "rgba(255, 255, 255, 0.1)",
+                      pathTransitionDuration: 1,
+                    })}
+                  />
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        )}
+              <div className="metric-value">{recentPower.toFixed(0)}W</div>
+              <p className="glass-text-muted text-sm mt-2">Real-time consumption</p>
+            </div>
+
+            {/* Total Energy */}
+            <div className="glassmorphism-card rounded-3xl p-8 text-center">
+              <div className="mb-4">
+                <h3 className="glass-text-secondary text-lg font-medium mb-2">Total Energy</h3>
+                <div className="circular-progress-glass mx-auto" style={{ width: 120, height: 120 }}>
+                  <CircularProgressbar
+                    value={Math.min((totalEnergy / 10) * 100, 100)}
+                    styles={buildStyles({
+                      pathColor: "rgba(16, 185, 129, 0.8)",
+                      textColor: "rgba(255, 255, 255, 0.95)",
+                      trailColor: "rgba(255, 255, 255, 0.1)",
+                      pathTransitionDuration: 1,
+                    })}
+                  />
+                </div>
+              </div>
+              <div className="metric-value">{totalEnergy.toFixed(2)} kWh</div>
+              <p className="glass-text-muted text-sm mt-2">Energy consumed</p>
+            </div>
+
+            {/* Peak Power */}
+            <div className="glassmorphism-card rounded-3xl p-8 text-center">
+              <div className="mb-4">
+                <h3 className="glass-text-secondary text-lg font-medium mb-2">Peak Power</h3>
+                <div className="circular-progress-glass mx-auto" style={{ width: 120, height: 120 }}>
+                  <CircularProgressbar
+                    value={Math.min((displayedPeak / 200) * 100, 100)}
+                    styles={buildStyles({
+                      pathColor: "rgba(245, 158, 11, 0.8)",
+                      textColor: "rgba(255, 255, 255, 0.95)",
+                      trailColor: "rgba(255, 255, 255, 0.1)",
+                      pathTransitionDuration: 1,
+                    })}
+                  />
+                </div>
+              </div>
+              <div className="metric-value">{displayedPeak.toFixed(0)}W</div>
+              <p className="glass-text-muted text-sm mt-2">Maximum recorded</p>
+            </div>
+
+            {/* Average Power */}
+            <div className="glassmorphism-card rounded-3xl p-8 text-center">
+              <div className="mb-4">
+                <h3 className="glass-text-secondary text-lg font-medium mb-2">Average Power</h3>
+                <div className="circular-progress-glass mx-auto" style={{ width: 120, height: 120 }}>
+                  <CircularProgressbar
+                    value={Math.min((averagePower / 100) * 100, 100)}
+                    styles={buildStyles({
+                      pathColor: "rgba(99, 102, 241, 0.8)",
+                      textColor: "rgba(255, 255, 255, 0.95)",
+                      trailColor: "rgba(255, 255, 255, 0.1)",
+                      pathTransitionDuration: 1,
+                    })}
+                  />
+                </div>
+              </div>
+              <div className="metric-value">{averagePower.toFixed(1)}W</div>
+              <p className="glass-text-muted text-sm mt-2">Mean consumption</p>
+            </div>
+          </div>
+
+          {/* Insights */}
+          {aggregatedData.length > 0 && (
+            <div className="glassmorphism-card rounded-3xl p-8">
+              <h2 className="text-2xl font-semibold glass-text-primary text-center mb-8">
+                System Insights
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="insight-card text-center">
+                  <div className="text-4xl font-bold glass-text-primary mb-2">
+                    {averagePower > 0 ? Math.min(((100 - averagePower/2) / 100 * 100), 100).toFixed(0) : 0}%
+                  </div>
+                  <div className="glass-text-secondary font-medium">Efficiency Score</div>
+                </div>
+                <div className="insight-card text-center">
+                  <div className="text-4xl font-bold glass-text-primary mb-2">
+                    {aggregatedData.length}
+                  </div>
+                  <div className="glass-text-secondary font-medium">Data Points</div>
+                </div>
+                <div className="insight-card text-center">
+                  <div className="text-4xl font-bold glass-text-primary mb-2">
+                    {aggregatedData.length > 1 
+                      ? (aggregatedData[aggregatedData.length - 1].avgWatts > aggregatedData[0].avgWatts ? "↗" : "↘")
+                      : "→"
+                    }
+                  </div>
+                  <div className="glass-text-secondary font-medium">Trend</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Error Display */}
+          {error && (
+            <div className="glassmorphism-card rounded-3xl p-6 border-red-500/30">
+              <div className="flex items-center justify-center space-x-3">
+                <span className="text-red-400 text-2xl">⚠</span>
+                <span className="glass-text-primary">Connection Error: {error}</span>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
       }
