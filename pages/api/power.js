@@ -1,4 +1,5 @@
 import clientPromise from '@/lib/mongodb';
+import { getAlertChecker } from '@/lib/alertChecker';
 
 export default async function handler(req, res) {
   if (req.method === 'POST') {
@@ -14,8 +15,26 @@ export default async function handler(req, res) {
         timestamp: new Date(),
       };
 
+      // Insert data
       await collection.insertOne(data);
-      return res.status(201).json({ message: 'Data inserted', data });
+
+      // Check alerts against the new data
+      const alertChecker = getAlertChecker();
+      const triggeredAlerts = await alertChecker.checkAlerts(data);
+
+      // Return response with alert information
+      return res.status(201).json({ 
+        message: 'Data inserted', 
+        data,
+        triggeredAlerts: triggeredAlerts.length,
+        alerts: triggeredAlerts.map(a => ({
+          name: a.name,
+          message: a.message,
+          metric: a.metric,
+          threshold: a.value,
+          actualValue: a.actualValue
+        }))
+      });
     } catch (error) {
       console.error('Error in /api/power POST:', error);
       return res.status(500).json({ error: 'Failed to insert power data', details: error.message });
