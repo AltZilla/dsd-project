@@ -1,68 +1,132 @@
 import clientPromise from '@/lib/mongodb';
 
 export default async function handler(req, res) {
-  const client = await clientPromise;
-  const db = client.db();
+  if (req.method === 'POST') {
+    try {
+      const client = await clientPromise;
+      const db = client.db();
+      const collection = db.collection('power_realtime');
+
+      const data = {
+        power: parseFloat(req.body.power) || 0,
+        voltage: parseFloat(req.body.voltage) || 0,
+        current: parseFloat(req.body.current) || 0,
+        timestamp: new Date(),
+      };
+
+      await collection.insertOne(data);
+      return res.status(201).json({ message: 'Data inserted', data });
+    } catch (error) {
+      console.error('Error in /api/power POST:', error);
+      return res.status(500).json({ error: 'Failed to insert power data', details: error.message });
+    }
+  }
 
   if (req.method === 'GET') {
     try {
-      if (req.query.limit) {
-        const limitHours = Number(req.query.limit);
-        const now = new Date();
-        const startTime = new Date(now.getTime() - limitHours * 3600000);
+      const client = await clientPromise;
+      const db = client.db();
 
-        const records = await db.collection('power_realtime')
+      const timeLimit = req.query.timeLimit ? parseInt(req.query.timeLimit) : null;
+
+      // Real-time mode - fetch latest single data point
+      if (!timeLimit || timeLimit === 'realtime') {
+        const latestData = await db.collection('power_realtime')
+          .find()
+          .sort({ timestamp: -1 })
+          .limit(1)
+          .toArray();
+        
+        if (latestData.length === 0) {
+          return res.status(200).json({ 
+            power: 0, 
+            voltage: 0, 
+            current: 0, 
+            timestamp: new Date() 
+          });
+        }
+
+        return res.status(200).json(latestData[0]);
+      }
+
+      const startTime = new Date(Date.now() - timeLimit * 3600 * 1000);
+
+      let data = [];
+
+      if (timeLimit <= 1) {
+        // Fetch granular data from the last hour
+        data = await db.collection('power_realtime')
           .find({ timestamp: { $gte: startTime } })
           .sort({ timestamp: 1 })
           .toArray();
 
-        let aggregatedData;
-        let interval = 1;
-
-        if (records.length > 1000) {
-          interval = 10;
-        } else if (records.length > 500) {
-          interval = 5;
+        // If no data in power_realtime, return empty array
+        if (data.length === 0) {
+          return res.status(200).json([]);
         }
 
-        if (interval > 1) {
-          const grouped = {};
-          records.forEach(entry => {
-            const date = new Date(entry.timestamp);
-            const key = Math.floor(date.getTime() / (interval * 60 * 1000));
-            if (!grouped[key]) {
-              grouped[key] = { voltage: 0, current: 0, power: 0, count: 0, timestamp: date };
-            }
-            grouped[key].voltage += Number(entry.voltage);
-            grouped[key].current += Number(entry.current);
-            grouped[key].power += Number(entry.power);
-            grouped[key].count++;
-          });
+      } else if (timeLimit <= 24) {
+        // Try to fetch hourly aggregated data
+        const hourlyData = await db.collection('power_hourly')
+          .find({ timestamp: { $gte: startTime } })
+          .sort({ timestamp: 1 })
+          .toArray();
 
-          aggregatedData = Object.keys(grouped).map(key => ({
-            avgVoltage: grouped[key].voltage / grouped[key].count,
-            avgCurrent: grouped[key].current / grouped[key].count,
-            avgWatts: grouped[key].power / grouped[key].count,
-            timestamp: grouped[key].timestamp
+        if (hourlyData.length > 0) {
+          data = hourlyData.map(d => ({
+            timestamp: d.timestamp,
+            power: d.summary.powerSum / d.summary.count,
+            voltage: d.summary.voltageSum / d.summary.count,
+            current: d.summary.currentSum / d.summary.count,
           }));
         } else {
-          aggregatedData = records.map(entry => ({
-            avgVoltage: Number(entry.voltage),
-            avgCurrent: Number(entry.current),
-            avgWatts: Number(entry.power),
-            timestamp: entry.timestamp
-          }));
+          // Fallback to realtime data if hourly aggregation doesn't exist
+          const realtimeData = await db.collection('power_realtime')
+            .find({ timestamp: { $gte: startTime } })
+            .sort({ timestamp: 1 })
+            .toArray();
+          
+          if (realtimeData.length > 0) {
+            // Sample data to reduce points (take every Nth point)
+            const sampleRate = Math.max(1, Math.floor(realtimeData.length / 100));
+            data = realtimeData.filter((_, index) => index % sampleRate === 0);
+          }
         }
 
-        const latestRecord = await db.collection('power_realtime').findOne({}, { sort: { timestamp: -1 } });
-
-        return res.status(200).json({ aggregatedData, recent: latestRecord });
       } else {
-        res.status(400).json({ error: 'Limit parameter is required' });
+        // Try to fetch daily aggregated data
+        const dailyData = await db.collection('power_daily')
+          .find({ timestamp: { $gte: startTime } })
+          .sort({ timestamp: 1 })
+          .toArray();
+
+        if (dailyData.length > 0) {
+          data = dailyData.map(d => ({
+            timestamp: d.timestamp,
+            power: d.summary.powerSum / d.summary.count,
+            voltage: d.summary.voltageSum / d.summary.count,
+            current: d.summary.currentSum / d.summary.count,
+          }));
+        } else {
+          // Fallback to realtime data with heavy sampling
+          const realtimeData = await db.collection('power_realtime')
+            .find({ timestamp: { $gte: startTime } })
+            .sort({ timestamp: 1 })
+            .toArray();
+          
+          if (realtimeData.length > 0) {
+            // Sample heavily for long time ranges
+            const sampleRate = Math.max(1, Math.floor(realtimeData.length / 200));
+            data = realtimeData.filter((_, index) => index % sampleRate === 0);
+          }
+        }
       }
+
+      res.status(200).json(data);
+
     } catch (error) {
-      console.error("GET /api/power error:", error);
-      res.status(500).json({ error: 'Server error' });
+      console.error('Error in /api/power GET:', error);
+      res.status(500).json({ error: 'Failed to fetch power data', details: error.message });
     }
   } else {
     res.status(405).json({ error: 'Method not allowed' });

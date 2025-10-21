@@ -1,4 +1,22 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/pages/api-reference/create-next-app).
+# Power Grid Monitor
+
+This is a real-time power grid monitoring application built with Next.js, Socket.io, and MongoDB. It simulates data from an ESP32 and displays it in a real-time dashboard.
+
+## Features
+
+*   **Real-time Data Visualization:** View real-time data for power, voltage, and current in a dynamic chart.
+*   **Historical Data:** View historical data for different time ranges (1H, 6H, 12H, 24H, 3D, 7D).
+*   **Data Aggregation:** Data is aggregated into hourly and daily summaries for efficient querying and long-term analysis.
+*   **Cost Estimation:** Estimate the energy cost based on the price per kWh. The price is automatically set based on the user's location, but it can also be manually overridden.
+*   **Alerts:** Set up alerts to be notified when a metric (power, voltage, or current) exceeds a certain threshold.
+*   **CSV Export:** Export the data to a CSV file.
+*   **Real-time Connection Status:** The UI displays the real-time connection status to the server.
+
+## Tech Stack
+
+*   **Frontend:** Next.js, React, ApexCharts, Tailwind CSS
+*   **Backend:** Node.js, Socket.io, MongoDB
+*   **Deployment:** Vercel
 
 ## Getting Started
 
@@ -6,35 +24,20 @@ First, run the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `pages/index.js`. The page auto-updates as you edit the file.
+You also need to create a `.env.local` file in the root of the project and add your MongoDB connection string:
 
-[API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) can be accessed on [http://localhost:3000/api/hello](http://localhost:3000/api/hello). This endpoint can be edited in `pages/api/hello.js`.
+```
+MONGODB_URI=<your-mongodb-connection-string>
+```
 
-The `pages/api` directory is mapped to `/api/*`. Files in this directory are treated as [API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) instead of React pages.
+## How it Works
 
-This project uses [`next/font`](https://nextjs.org/docs/pages/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The application consists of three main parts:
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn-pages-router) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/pages/building-your-application/deploying) for more details.
+1.  **ESP32 Simulator:** The `esp32-simulator.js` script simulates an ESP32 device that sends real-time power grid data to the server every 2 seconds.
+2.  **Socket Server:** The `socket-server.js` script is a Node.js server that uses Socket.io to create a websocket connection. It receives the data from the ESP32 simulator, stores it in a MongoDB database, and broadcasts it to all connected clients.
+3.  **Frontend:** The frontend is a Next.js application that displays the real-time data in a chart. It also allows users to view historical data, set up alerts, and export data to a CSV file.
