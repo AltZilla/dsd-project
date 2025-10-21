@@ -32,21 +32,56 @@ export default function Home() {
   const [alerts, setAlerts] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('connecting');
+  const [activeAlerts, setActiveAlerts] = useState([]);
+  const [showAlertPopup, setShowAlertPopup] = useState(false);
+  const [lastAlertTime, setLastAlertTime] = useState(0);
 
-  // Fetch alerts on mount
+  // Fetch alerts on mount and poll for updates
   useEffect(() => {
     async function fetchAlerts() {
       try {
         const response = await fetch('/api/alerts');
         if (response.ok) {
-          const data = await response.json();
-          setAlerts(data);
+          const allAlerts = await response.json();
+          setAlerts(allAlerts);
+          
+          // Check for triggered alerts
+          const triggered = allAlerts.filter(a => a.triggered && a.active);
+          
+          console.log('Triggered alerts:', triggered.length, triggered);
+          
+          if (triggered.length > 0) {
+            const hasNewAlerts = triggered.some(t => 
+              !activeAlerts.find(a => a._id === t._id)
+            );
+            
+            setActiveAlerts(triggered);
+            
+            if (hasNewAlerts || (triggered.length > 0 && activeAlerts.length === 0)) {
+              const now = Date.now();
+              if (now - lastAlertTime > 5000) {
+                console.log('Showing alert popup');
+                setShowAlertPopup(true);
+                setLastAlertTime(now);
+              } else {
+                console.log('Alert popup throttled, wait', 5 - (now - lastAlertTime) / 1000, 'seconds');
+              }
+            }
+          } else {
+            if (activeAlerts.length > 0) {
+              setActiveAlerts([]);
+              setShowAlertPopup(false);
+            }
+          }
         }
       } catch (error) {
         console.error('Error fetching alerts:', error);
       }
     }
+    
     fetchAlerts();
+    const interval = setInterval(fetchAlerts, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   // Real-time data fetching
@@ -59,7 +94,6 @@ export default function Home() {
         if (response.ok) {
           const newData = await response.json();
           setData(prevData => {
-            // Keep only last 100 points for performance
             const updated = [...prevData, newData];
             return updated.slice(-100);
           });
@@ -73,7 +107,6 @@ export default function Home() {
       }
     };
 
-    // Initial fetch
     fetchData();
     
     const intervalId = setInterval(fetchData, 2000);
@@ -284,6 +317,31 @@ export default function Home() {
 
   const timeRanges = [1, 6, 12, 24, 72, 168];
 
+  const dismissAlertPopup = () => {
+    setShowAlertPopup(false);
+  };
+
+  const acknowledgeAlert = async (alertId) => {
+    try {
+      const response = await fetch('/api/alerts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: alertId, operation: 'acknowledge' })
+      });
+
+      if (response.ok) {
+        const updatedAlert = await response.json();
+        setAlerts(alerts.map(a => a._id === alertId ? updatedAlert : a));
+        setActiveAlerts(activeAlerts.filter(a => a._id !== alertId));
+        if (activeAlerts.length <= 1) {
+          setShowAlertPopup(false);
+        }
+      }
+    } catch (error) {
+      console.error('Error acknowledging alert:', error);
+    }
+  };
+
   return (
     <>
       <style jsx global>{`
@@ -305,9 +363,51 @@ export default function Home() {
         @keyframes spin { to { transform: rotate(360deg); } }
         .premium-input { background: rgba(55, 65, 81, 0.5); border: 1px solid #4B5563; border-radius: 0.5rem; padding: 0.5rem 1rem; width: 100%; color: #E5E7EB; }
         .premium-input:focus { outline: none; border-color: #FBBF24; }
+        .alert-popup { position: fixed; top: 20px; right: 20px; z-index: 1000; max-width: 400px; animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn { from { transform: translateX(400px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .alert-badge { position: absolute; top: -8px; right: -8px; background: #EF4444; color: white; font-size: 0.75rem; font-weight: bold; padding: 0.25rem 0.5rem; border-radius: 9999px; min-width: 20px; text-align: center; }
       `}</style>
 
       <div className="animated-bg"></div>
+
+      {/* Alert Popup */}
+      {showAlertPopup && activeAlerts.length > 0 && (
+        <div className="alert-popup">
+          <div className="premium-panel p-4 border-2 border-red-500 shadow-lg shadow-red-500/50">
+            <div className="flex items-start justify-between mb-3">
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                <h3 className="text-lg font-bold text-red-400">⚠️ Alert Triggered!</h3>
+              </div>
+              <button 
+                onClick={dismissAlertPopup}
+                className="text-gray-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {activeAlerts.map(alert => (
+                <div key={alert._id} className="bg-gray-800 p-3 rounded border border-red-900">
+                  <p className="text-white font-semibold">{alert.name}</p>
+                  <p className="text-sm text-gray-300 mt-1">
+                    {alert.metric}: {alert.condition} {alert.value}
+                  </p>
+                  {alert.message && (
+                    <p className="text-sm text-yellow-400 mt-1">{alert.message}</p>
+                  )}
+                  <button
+                    onClick={() => acknowledgeAlert(alert._id)}
+                    className="mt-2 text-xs px-3 py-1 bg-green-900 text-green-300 rounded hover:bg-green-800 transition"
+                  >
+                    Acknowledge
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="container mx-auto p-8 space-y-8">
         <header className="text-center space-y-2">
@@ -341,8 +441,16 @@ export default function Home() {
           <button onClick={handleExportCsv} className="premium-button px-4 py-2 rounded-md font-medium">
             Export CSV
           </button>
-          <button onClick={() => setShowModal(true)} className="premium-button px-4 py-2 rounded-md font-medium">
+          <button 
+            onClick={() => setShowModal(true)} 
+            className={`premium-button px-4 py-2 rounded-md font-medium relative ${
+              activeAlerts.length > 0 ? 'border-red-500 text-red-400 hover:bg-red-900' : ''
+            }`}
+          >
             Alerts
+            {activeAlerts.length > 0 && (
+              <span className="alert-badge">{activeAlerts.length}</span>
+            )}
           </button>
         </div>
 
