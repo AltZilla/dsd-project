@@ -1,118 +1,151 @@
 import clientPromise from '@/lib/mongodb';
-
-let recent = 0;
-let recent_date = new Date();
+import { getAlertChecker } from '@/lib/alertChecker';
 
 export default async function handler(req, res) {
-  const client = await clientPromise;
-  const db = client.db();
-
   if (req.method === 'POST') {
     try {
-      const { watts } = req.body;
-      const now = new Date();
-      let energy = watts / (3600 * 1000);
-      
-      const newEntry = {
-        watts: Number(watts),
-        timestamp: now,
-        energy,
+      const client = await clientPromise;
+      const db = client.db();
+      const collection = db.collection('power_realtime');
+
+      const data = {
+        power: parseFloat(req.body.power) || 0,
+        voltage: parseFloat(req.body.voltage) || 0,
+        current: parseFloat(req.body.current) || 0,
+        timestamp: new Date(),
       };
 
-      recent = Number(watts);
-      recent_date = now;
+      // Insert data
+      await collection.insertOne(data);
 
-      const lastEntry = await db
-        .collection('power')
-        .findOne({}, { sort: { timestamp: -1 } });
+      // Check alerts against the new data
+      const alertChecker = getAlertChecker();
+      const triggeredAlerts = await alertChecker.checkAlerts(data);
 
-      if (lastEntry) {
-        const lastTime = new Date(lastEntry.timestamp);
-        let timeDiffSeconds = (now - lastTime) / 1000;
+      // Return response with alert information
+      return res.status(201).json({ 
+        message: 'Data inserted', 
+        data,
+        triggeredAlerts: triggeredAlerts.length,
+        alerts: triggeredAlerts.map(a => ({
+          name: a.name,
+          message: a.message,
+          metric: a.metric,
+          threshold: a.value,
+          actualValue: a.actualValue
+        }))
+      });
+    } catch (error) {
+      console.error('Error in /api/power POST:', error);
+      return res.status(500).json({ error: 'Failed to insert power data', details: error.message });
+    }
+  }
 
-        timeDiffSeconds = Math.min(timeDiffSeconds, 120);
+  if (req.method === 'GET') {
+    try {
+      const client = await clientPromise;
+      const db = client.db();
 
-        energy = (watts * timeDiffSeconds) / (3600 * 1000); 
+      const timeLimit = req.query.timeLimit ? parseInt(req.query.timeLimit) : null;
 
-        if (Math.floor(lastTime.getTime() / 60000) === Math.floor(now.getTime() / 60000)) {
+      // Real-time mode - fetch latest single data point
+      if (!timeLimit || timeLimit === 'realtime') {
+        const latestData = await db.collection('power_realtime')
+          .find()
+          .sort({ timestamp: -1 })
+          .limit(1)
+          .toArray();
         
-          const updatedWatts = (lastEntry.watts + Number(watts)) / 2;
-          await db.collection('power').updateOne(
-            { _id: lastEntry._id },
-            {
-              $set: { watts: updatedWatts, timestamp: now },
-              $inc: { energy }, 
-            }
-          );
-
-          return res.status(200).json({ success: true });
+        if (latestData.length === 0) {
+          return res.status(200).json({ 
+            power: 0, 
+            voltage: 0, 
+            current: 0, 
+            timestamp: new Date() 
+          });
         }
+
+        return res.status(200).json(latestData[0]);
       }
 
-      await db.collection('power').insertOne(newEntry);
+      const startTime = new Date(Date.now() - timeLimit * 3600 * 1000);
 
-      res.status(200).json({ success: true });
-    } catch (error) {
-      console.error("POST /api/power error:", error);
-      res.status(500).json({ error: 'Server error' });
-    }
-  } else if (req.method === 'GET') {
-    try {
-      if (req.query.limit) {
-        const limitHours = Number(req.query.limit);
-        const now = new Date();
-        const startTime = new Date(now.getTime() - limitHours * 3600000);
+      let data = [];
 
-        const records = await db.collection('power')
+      if (timeLimit <= 1) {
+        // Fetch granular data from the last hour
+        data = await db.collection('power_realtime')
           .find({ timestamp: { $gte: startTime } })
           .sort({ timestamp: 1 })
           .toArray();
 
-        let aggregatedData;
-        let interval = 1;
-
-        if (records.length > 1000) {
-          interval = 10;
-        } else if (records.length > 500) {
-          interval = 5;
+        // If no data in power_realtime, return empty array
+        if (data.length === 0) {
+          return res.status(200).json([]);
         }
 
-        if (interval > 1) {
-          const grouped = {};
-          records.forEach(entry => {
-            const date = new Date(entry.timestamp);
-            const key = Math.floor(date.getTime() / (interval * 60 * 1000));
-            if (!grouped[key]) {
-              grouped[key] = { sum: 0, count: 0, timestamp: date };
-            }
-            grouped[key].sum += entry.watts;
-            grouped[key].count++;
-          });
+      } else if (timeLimit <= 24) {
+        // Try to fetch hourly aggregated data
+        const hourlyData = await db.collection('power_hourly')
+          .find({ timestamp: { $gte: startTime } })
+          .sort({ timestamp: 1 })
+          .toArray();
 
-          aggregatedData = Object.keys(grouped).map(key => ({
-            avgWatts: grouped[key].sum / grouped[key].count,
-            timestamp: grouped[key].timestamp
+        if (hourlyData.length > 0) {
+          data = hourlyData.map(d => ({
+            timestamp: d.timestamp,
+            power: d.summary.powerSum / d.summary.count,
+            voltage: d.summary.voltageSum / d.summary.count,
+            current: d.summary.currentSum / d.summary.count,
           }));
         } else {
-          aggregatedData = records.map(entry => ({
-            avgWatts: entry.watts,
-            timestamp: entry.timestamp
-          }));
+          // Fallback to realtime data if hourly aggregation doesn't exist
+          const realtimeData = await db.collection('power_realtime')
+            .find({ timestamp: { $gte: startTime } })
+            .sort({ timestamp: 1 })
+            .toArray();
+          
+          if (realtimeData.length > 0) {
+            // Sample data to reduce points (take every Nth point)
+            const sampleRate = Math.max(1, Math.floor(realtimeData.length / 100));
+            data = realtimeData.filter((_, index) => index % sampleRate === 0);
+          }
         }
 
-        let recentPower = 0;
-        const diffSec = (new Date() - recent_date) / 1000;
-        if (diffSec < 10) recentPower = recent;
-
-        const totalEnergy = records.reduce((sum, entry) => sum + (entry.energy || 0), 0);
-
-        return res.status(200).json({ aggregatedData, recent: recentPower, totalEnergy });
       } else {
-        res.status(400).json({ error: 'Limit parameter is required' });
+        // Try to fetch daily aggregated data
+        const dailyData = await db.collection('power_daily')
+          .find({ timestamp: { $gte: startTime } })
+          .sort({ timestamp: 1 })
+          .toArray();
+
+        if (dailyData.length > 0) {
+          data = dailyData.map(d => ({
+            timestamp: d.timestamp,
+            power: d.summary.powerSum / d.summary.count,
+            voltage: d.summary.voltageSum / d.summary.count,
+            current: d.summary.currentSum / d.summary.count,
+          }));
+        } else {
+          // Fallback to realtime data with heavy sampling
+          const realtimeData = await db.collection('power_realtime')
+            .find({ timestamp: { $gte: startTime } })
+            .sort({ timestamp: 1 })
+            .toArray();
+          
+          if (realtimeData.length > 0) {
+            // Sample heavily for long time ranges
+            const sampleRate = Math.max(1, Math.floor(realtimeData.length / 200));
+            data = realtimeData.filter((_, index) => index % sampleRate === 0);
+          }
+        }
       }
+
+      res.status(200).json(data);
+
     } catch (error) {
-      console.error("GET /api/power error:", error);
-      res.status(500).json({ error: 'Server error' });
+      console.error('Error in /api/power GET:', error);
+      res.status(500).json({ error: 'Failed to fetch power data', details: error.message });
     }
   } else {
     res.status(405).json({ error: 'Method not allowed' });
