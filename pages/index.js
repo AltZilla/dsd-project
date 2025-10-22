@@ -10,24 +10,22 @@ const ApexChartsComponent = dynamic(() => import('react-apexcharts'), {
   loading: () => <div className="flex items-center justify-center h-[400px]"><div className="premium-loader"></div></div>
 });
 
-const averageKwhPriceByCountry = {
-  'US': 0.17,
-  'CA': 0.15,
-  'DE': 0.32,
-  'GB': 0.28,
-  'FR': 0.19,
-  'AU': 0.22,
-  'IN': 0.08,
-  'JP': 0.26,
-  'CN': 0.09,
-  'default': 0.15
-};
+// Indian electricity pricing structure (example: typical urban domestic tariff)
+// Rates vary by state - this represents a typical structure
+const indianElectricitySlabs = [
+  { limit: 100, rate: 3.50 },    // 0-100 units: ₹3.50/unit
+  { limit: 200, rate: 4.50 },    // 101-200 units: ₹4.50/unit
+  { limit: 300, rate: 6.00 },    // 201-300 units: ₹6.00/unit
+  { limit: 400, rate: 7.00 },    // 301-400 units: ₹7.00/unit
+  { limit: Infinity, rate: 8.00 } // Above 400 units: ₹8.00/unit
+];
+
+const FIXED_MONTHLY_CHARGE = 50; // ₹50 fixed charge per month
+const USD_TO_INR = 83; // Current approximate exchange rate
 
 export default function Home() {
   const [data, setData] = useState([]);
   const [timeLimit, setTimeLimit] = useState('realtime');
-  const [pricePerKwh, setPricePerKwh] = useState(0.15);
-  const [location, setLocation] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [alerts, setAlerts] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -175,7 +173,39 @@ export default function Home() {
     return (averagePower / 1000) * timeLimit;
   }, [averagePower, timeLimit, durationInHours]);
 
-  const estimatedCost = useMemo(() => totalEnergyKwh * pricePerKwh, [totalEnergyKwh, pricePerKwh]);
+  // Calculate cost using Indian slab-based pricing
+  const calculateIndianCost = (units) => {
+    let cost = 0;
+    let remainingUnits = units;
+    let previousLimit = 0;
+
+    for (const slab of indianElectricitySlabs) {
+      const slabUnits = Math.min(remainingUnits, slab.limit - previousLimit);
+      if (slabUnits <= 0) break;
+      
+      cost += slabUnits * slab.rate;
+      remainingUnits -= slabUnits;
+      previousLimit = slab.limit;
+      
+      if (remainingUnits <= 0) break;
+    }
+
+    return cost;
+  };
+
+  const costBreakdown = useMemo(() => {
+    const energyCost = calculateIndianCost(totalEnergyKwh);
+    const fixedCharge = FIXED_MONTHLY_CHARGE;
+    const totalInr = energyCost + fixedCharge;
+    const totalUsd = totalInr / USD_TO_INR;
+
+    return {
+      energyCost,
+      fixedCharge,
+      totalInr,
+      totalUsd
+    };
+  }, [totalEnergyKwh]);
 
   const handleExportCsv = () => {
     if (filteredData.length === 0) {
@@ -496,28 +526,38 @@ export default function Home() {
              </div>
           </div>
           <div className="premium-panel p-6 md:col-span-2">
-            <h3 className="text-gray-400 font-medium mb-4 uppercase tracking-widest text-center">Energy & Cost Analysis</h3>
+            <h3 className="text-gray-400 font-medium mb-4 uppercase tracking-widest text-center">Energy & Cost Analysis (India)</h3>
             <div className="space-y-4">
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-sm text-gray-400">Price per kWh ($)</label>
-                  {location && <span className="text-xs text-gray-500">Based on avg. for {location.country}</span>}
-                </div>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  value={pricePerKwh} 
-                  onChange={e => setPricePerKwh(parseFloat(e.target.value) || 0)} 
-                  className="premium-input" 
-                />
-              </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-300">Total Energy Consumed</span>
                 <span className="metric-value text-2xl text-white">{totalEnergyKwh.toFixed(2)} kWh</span>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-gray-300">Estimated Cost</span>
-                <span className="metric-value text-2xl text-green-400">${estimatedCost.toFixed(2)}</span>
+              
+              <div className="border-t border-gray-700 pt-3 space-y-2">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-400">Energy Cost (Slab-based)</span>
+                  <span className="text-gray-200">₹{costBreakdown.energyCost.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-400">Fixed Monthly Charge</span>
+                  <span className="text-gray-200">₹{costBreakdown.fixedCharge.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-700 pt-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-300 font-semibold">Total Cost (INR)</span>
+                  <span className="metric-value text-2xl text-green-400">₹{costBreakdown.totalInr.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center mt-2">
+                  <span className="text-gray-400 text-sm">Approx. USD</span>
+                  <span className="text-gray-300">${costBreakdown.totalUsd.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="bg-gray-800 p-3 rounded text-xs text-gray-400 mt-3">
+                <p className="mb-1">💡 <strong>Slab Rates:</strong></p>
+                <p>0-100 units: ₹3.50 | 101-200: ₹4.50 | 201-300: ₹6.00 | 301-400: ₹7.00 | 400+: ₹8.00</p>
               </div>
             </div>
           </div>
