@@ -1,27 +1,25 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-
 import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
 import 'react-circular-progressbar/dist/styles.css';
 import AlertsModal from '../components/AlertsModal';
+import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 const ApexChartsComponent = dynamic(() => import('react-apexcharts'), { 
   ssr: false,
   loading: () => <div className="flex items-center justify-center h-[400px]"><div className="premium-loader"></div></div>
 });
 
-// Indian electricity pricing structure (example: typical urban domestic tariff)
-// Rates vary by state - this represents a typical structure
 const indianElectricitySlabs = [
-  { limit: 100, rate: 3.50 },    // 0-100 units: ₹3.50/unit
-  { limit: 200, rate: 4.50 },    // 101-200 units: ₹4.50/unit
-  { limit: 300, rate: 6.00 },    // 201-300 units: ₹6.00/unit
-  { limit: 400, rate: 7.00 },    // 301-400 units: ₹7.00/unit
-  { limit: Infinity, rate: 8.00 } // Above 400 units: ₹8.00/unit
+  { limit: 100, rate: 3.50 },
+  { limit: 200, rate: 4.50 },
+  { limit: 300, rate: 6.00 },
+  { limit: 400, rate: 7.00 },
+  { limit: Infinity, rate: 8.00 }
 ];
 
-const FIXED_MONTHLY_CHARGE = 50; // ₹50 fixed charge per month
-const USD_TO_INR = 83; // Current approximate exchange rate
+const FIXED_MONTHLY_CHARGE = 50;
+const USD_TO_INR = 83;
 
 export default function Home() {
   const [data, setData] = useState([]);
@@ -33,8 +31,40 @@ export default function Home() {
   const [activeAlerts, setActiveAlerts] = useState([]);
   const [showAlertPopup, setShowAlertPopup] = useState(false);
   const [lastAlertTime, setLastAlertTime] = useState(0);
+  const [comparisonData, setComparisonData] = useState({
+    today: null,
+    yesterday: null,
+    thisWeek: null,
+    lastWeek: null,
+    thisMonth: null,
+    lastMonth: null,
+    calculatedAt: null
+  });
+  const [isLoadingComparison, setIsLoadingComparison] = useState(false);
+  const [showComparisonModal, setShowComparisonModal] = useState(false);
 
-  // Fetch alerts on mount and poll for updates
+  // Fetch comparison data
+  useEffect(() => {
+    async function fetchComparisonData() {
+      setIsLoadingComparison(true);
+      try {
+        const response = await fetch('/api/comparison');
+        if (response.ok) {
+          const data = await response.json();
+          setComparisonData(data);
+        }
+      } catch (error) {
+        console.error('Error fetching comparison data:', error);
+      } finally {
+        setIsLoadingComparison(false);
+      }
+    }
+    
+    fetchComparisonData();
+    const interval = setInterval(fetchComparisonData, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     async function fetchAlerts() {
       try {
@@ -43,10 +73,7 @@ export default function Home() {
           const allAlerts = await response.json();
           setAlerts(allAlerts);
           
-          // Check for triggered alerts
           const triggered = allAlerts.filter(a => a.triggered && a.active);
-          
-          console.log('Triggered alerts:', triggered.length, triggered);
           
           if (triggered.length > 0) {
             const hasNewAlerts = triggered.some(t => 
@@ -58,11 +85,8 @@ export default function Home() {
             if (hasNewAlerts || (triggered.length > 0 && activeAlerts.length === 0)) {
               const now = Date.now();
               if (now - lastAlertTime > 5000) {
-                console.log('Showing alert popup');
                 setShowAlertPopup(true);
                 setLastAlertTime(now);
-              } else {
-                console.log('Alert popup throttled, wait', 5 - (now - lastAlertTime) / 1000, 'seconds');
               }
             }
           } else {
@@ -82,7 +106,6 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  // Real-time data fetching
   useEffect(() => {
     if (timeLimit !== 'realtime') return;
 
@@ -106,13 +129,10 @@ export default function Home() {
     };
 
     fetchData();
-    
     const intervalId = setInterval(fetchData, 2000);
-
     return () => clearInterval(intervalId);
   }, [timeLimit]);
 
-  // Historical data fetching
   useEffect(() => {
     setData([]);
     setIsLoading(true);
@@ -129,7 +149,6 @@ export default function Home() {
           const initialData = await response.json();
           setData(Array.isArray(initialData) ? initialData : []);
         } else {
-          console.error('Failed to fetch data:', response.status);
           setData([]);
         }
       } catch (error) {
@@ -143,9 +162,7 @@ export default function Home() {
     fetchInitialData();
   }, [timeLimit]);
 
-  const filteredData = useMemo(() => {
-    return data;
-  }, [data]);
+  const filteredData = useMemo(() => data, [data]);
 
   const latestData = useMemo(() => 
     filteredData.length > 0 ? filteredData[filteredData.length - 1] : { power: 0, voltage: 0, current: 0 }, 
@@ -158,9 +175,7 @@ export default function Home() {
   );
 
   const durationInHours = useMemo(() => {
-    if (filteredData.length < 2) {
-      return 0;
-    }
+    if (filteredData.length < 2) return 0;
     const firstTimestamp = new Date(filteredData[0].timestamp).getTime();
     const lastTimestamp = new Date(filteredData[filteredData.length - 1].timestamp).getTime();
     return (lastTimestamp - firstTimestamp) / (1000 * 3600);
@@ -173,7 +188,6 @@ export default function Home() {
     return (averagePower / 1000) * timeLimit;
   }, [averagePower, timeLimit, durationInHours]);
 
-  // Calculate cost using Indian slab-based pricing
   const calculateIndianCost = (units) => {
     let cost = 0;
     let remainingUnits = units;
@@ -199,12 +213,7 @@ export default function Home() {
     const totalInr = energyCost + fixedCharge;
     const totalUsd = totalInr / USD_TO_INR;
 
-    return {
-      energyCost,
-      fixedCharge,
-      totalInr,
-      totalUsd
-    };
+    return { energyCost, fixedCharge, totalInr, totalUsd };
   }, [totalEnergyKwh]);
 
   const handleExportCsv = () => {
@@ -293,10 +302,7 @@ export default function Home() {
             borderColor: '#ff0000',
             label: {
               borderColor: '#ff0000',
-              style: {
-                color: '#fff',
-                background: '#ff0000',
-              },
+              style: { color: '#fff', background: '#ff0000' },
               text: `Alert: > ${powerAlert.value}W`,
             },
           },
@@ -325,15 +331,11 @@ export default function Home() {
     stroke: { width: 1 },
     xaxis: { 
       type: 'datetime', 
-      labels: { 
-        style: { colors: "#9CA3AF", fontFamily: 'Inter' } 
-      } 
+      labels: { style: { colors: "#9CA3AF", fontFamily: 'Inter' } } 
     },
     yaxis: { 
       tickAmount: 2, 
-      labels: { 
-        style: { colors: "#9CA3AF", fontFamily: 'Inter' } 
-      } 
+      labels: { style: { colors: "#9CA3AF", fontFamily: 'Inter' } } 
     },
     tooltip: { enabled: false }
   }), [filteredData]);
@@ -347,9 +349,7 @@ export default function Home() {
 
   const timeRanges = [1, 6, 12, 24, 72, 168];
 
-  const dismissAlertPopup = () => {
-    setShowAlertPopup(false);
-  };
+  const dismissAlertPopup = () => setShowAlertPopup(false);
 
   const acknowledgeAlert = async (alertId) => {
     try {
@@ -396,9 +396,227 @@ export default function Home() {
         .alert-popup { position: fixed; top: 20px; right: 20px; z-index: 1000; max-width: 400px; animation: slideIn 0.3s ease-out; }
         @keyframes slideIn { from { transform: translateX(400px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         .alert-badge { position: absolute; top: -8px; right: -8px; background: #EF4444; color: white; font-size: 0.75rem; font-weight: bold; padding: 0.25rem 0.5rem; border-radius: 9999px; min-width: 20px; text-align: center; }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(4px); z-index: 1000; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .modal-content { animation: slideUp 0.3s ease-out; max-width: 90%; max-height: 90vh; overflow-y: auto; }
+        @keyframes slideUp { from { transform: translateY(50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
       `}</style>
 
       <div className="animated-bg"></div>
+
+      {/* Comparison Modal */}
+      {showComparisonModal && (
+        <div className="modal-overlay" onClick={() => setShowComparisonModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="premium-panel p-8 w-full max-w-4xl">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-3xl font-bold text-white flex items-center gap-3">
+                    <span className="text-4xl"></span>
+                    Consumption Trends
+                  </h2>
+                  <p className="text-gray-400 text-sm mt-1">Compare your energy usage across different time periods</p>
+                </div>
+                <button 
+                  onClick={() => setShowComparisonModal(false)}
+                  className="text-gray-400 hover:text-white text-2xl font-bold w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-800 transition"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {isLoadingComparison ? (
+                <div className="flex items-center justify-center py-20">
+                  <div className="premium-loader"></div>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Daily Comparison */}
+                  <div className="premium-panel p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <span className="text-3xl"></span>
+                        <div>
+                          <h3 className="text-xl font-bold text-white">Daily Comparison</h3>
+                          <p className="text-xs text-gray-400">Today vs Yesterday</p>
+                        </div>
+                      </div>
+                      {comparisonData.today !== null && comparisonData.yesterday !== null && (
+                        <div className="text-right">
+                          {(() => {
+                            const percentChange = comparisonData.yesterday > 0 
+                              ? ((comparisonData.today - comparisonData.yesterday) / comparisonData.yesterday * 100) 
+                              : 0;
+                            const isIncrease = percentChange > 1;
+                            const isDecrease = percentChange < -1;
+                            
+                            return (
+                              <div className="flex items-center gap-2">
+                                {isIncrease ? (
+                                  <>
+                                    <TrendingUp size={24} className="text-red-400" />
+                                    <span className="text-2xl font-bold text-red-400">+{percentChange.toFixed(1)}%</span>
+                                  </>
+                                ) : isDecrease ? (
+                                  <>
+                                    <TrendingDown size={24} className="text-green-400" />
+                                    <span className="text-2xl font-bold text-green-400">{percentChange.toFixed(1)}%</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Minus size={24} className="text-gray-400" />
+                                    <span className="text-2xl font-bold text-gray-400">{Math.abs(percentChange).toFixed(1)}%</span>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-gray-800 rounded-lg p-4">
+                        <p className="text-xs text-gray-400 mb-1">Today</p>
+                        <p className="text-2xl font-bold text-white">
+                          {comparisonData.today !== null ? comparisonData.today.toFixed(2) : '---'} <span className="text-sm text-gray-400">kWh</span>
+                        </p>
+                      </div>
+                      <div className="bg-gray-800 rounded-lg p-4">
+                        <p className="text-xs text-gray-400 mb-1">Yesterday</p>
+                        <p className="text-2xl font-bold text-gray-300">
+                          {comparisonData.yesterday !== null ? comparisonData.yesterday.toFixed(2) : '---'} <span className="text-sm text-gray-400">kWh</span>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Weekly Comparison */}
+                  <div className="premium-panel p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <span className="text-3xl"></span>
+                        <div>
+                          <h3 className="text-xl font-bold text-white">Weekly Comparison</h3>
+                          <p className="text-xs text-gray-400">This Week vs Last Week</p>
+                        </div>
+                      </div>
+                      {comparisonData.thisWeek !== null && comparisonData.lastWeek !== null && (
+                        <div className="text-right">
+                          {(() => {
+                            const percentChange = comparisonData.lastWeek > 0 
+                              ? ((comparisonData.thisWeek - comparisonData.lastWeek) / comparisonData.lastWeek * 100) 
+                              : 0;
+                            const isIncrease = percentChange > 1;
+                            const isDecrease = percentChange < -1;
+                            
+                            return (
+                              <div className="flex items-center gap-2">
+                                {isIncrease ? (
+                                  <>
+                                    <TrendingUp size={24} className="text-red-400" />
+                                    <span className="text-2xl font-bold text-red-400">+{percentChange.toFixed(1)}%</span>
+                                  </>
+                                ) : isDecrease ? (
+                                  <>
+                                    <TrendingDown size={24} className="text-green-400" />
+                                    <span className="text-2xl font-bold text-green-400">{percentChange.toFixed(1)}%</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Minus size={24} className="text-gray-400" />
+                                    <span className="text-2xl font-bold text-gray-400">{Math.abs(percentChange).toFixed(1)}%</span>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-gray-800 rounded-lg p-4">
+                        <p className="text-xs text-gray-400 mb-1">This Week</p>
+                        <p className="text-2xl font-bold text-white">
+                          {comparisonData.thisWeek !== null ? comparisonData.thisWeek.toFixed(2) : '---'} <span className="text-sm text-gray-400">kWh</span>
+                        </p>
+                      </div>
+                      <div className="bg-gray-800 rounded-lg p-4">
+                        <p className="text-xs text-gray-400 mb-1">Last Week</p>
+                        <p className="text-2xl font-bold text-gray-300">
+                          {comparisonData.lastWeek !== null ? comparisonData.lastWeek.toFixed(2) : '---'} <span className="text-sm text-gray-400">kWh</span>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Monthly Comparison */}
+                  <div className="premium-panel p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <span className="text-3xl"></span>
+                        <div>
+                          <h3 className="text-xl font-bold text-white">Monthly Comparison</h3>
+                          <p className="text-xs text-gray-400">This Month vs Last Month</p>
+                        </div>
+                      </div>
+                      {comparisonData.thisMonth !== null && comparisonData.lastMonth !== null && (
+                        <div className="text-right">
+                          {(() => {
+                            const percentChange = comparisonData.lastMonth > 0 
+                              ? ((comparisonData.thisMonth - comparisonData.lastMonth) / comparisonData.lastMonth * 100) 
+                              : 0;
+                            const isIncrease = percentChange > 1;
+                            const isDecrease = percentChange < -1;
+                            
+                            return (
+                              <div className="flex items-center gap-2">
+                                {isIncrease ? (
+                                  <>
+                                    <TrendingUp size={24} className="text-red-400" />
+                                    <span className="text-2xl font-bold text-red-400">+{percentChange.toFixed(1)}%</span>
+                                  </>
+                                ) : isDecrease ? (
+                                  <>
+                                    <TrendingDown size={24} className="text-green-400" />
+                                    <span className="text-2xl font-bold text-green-400">{percentChange.toFixed(1)}%</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Minus size={24} className="text-gray-400" />
+                                    <span className="text-2xl font-bold text-gray-400">{Math.abs(percentChange).toFixed(1)}%</span>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-gray-800 rounded-lg p-4">
+                        <p className="text-xs text-gray-400 mb-1">This Month</p>
+                        <p className="text-2xl font-bold text-white">
+                          {comparisonData.thisMonth !== null ? comparisonData.thisMonth.toFixed(2) : '---'} <span className="text-sm text-gray-400">kWh</span>
+                        </p>
+                      </div>
+                      <div className="bg-gray-800 rounded-lg p-4">
+                        <p className="text-xs text-gray-400 mb-1">Last Month</p>
+                        <p className="text-2xl font-bold text-gray-300">
+                          {comparisonData.lastMonth !== null ? comparisonData.lastMonth.toFixed(2) : '---'} <span className="text-sm text-gray-400">kWh</span>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-center text-xs text-gray-500 mt-4">
+                    Last updated: {comparisonData.calculatedAt ? new Date(comparisonData.calculatedAt).toLocaleString() : 'N/A'}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Alert Popup */}
       {showAlertPopup && activeAlerts.length > 0 && (
@@ -409,12 +627,7 @@ export default function Home() {
                 <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
                 <h3 className="text-lg font-bold text-red-400">⚠️ Alert Triggered!</h3>
               </div>
-              <button 
-                onClick={dismissAlertPopup}
-                className="text-gray-400 hover:text-white"
-              >
-                ✕
-              </button>
+              <button onClick={dismissAlertPopup} className="text-gray-400 hover:text-white">✕</button>
             </div>
             <div className="space-y-2 max-h-60 overflow-y-auto">
               {activeAlerts.map(alert => (
@@ -423,9 +636,7 @@ export default function Home() {
                   <p className="text-sm text-gray-300 mt-1">
                     {alert.metric}: {alert.condition} {alert.value}
                   </p>
-                  {alert.message && (
-                    <p className="text-sm text-yellow-400 mt-1">{alert.message}</p>
-                  )}
+                  {alert.message && <p className="text-sm text-yellow-400 mt-1">{alert.message}</p>}
                   <button
                     onClick={() => acknowledgeAlert(alert._id)}
                     className="mt-2 text-xs px-3 py-1 bg-green-900 text-green-300 rounded hover:bg-green-800 transition"
@@ -472,15 +683,19 @@ export default function Home() {
             Export CSV
           </button>
           <button 
+            onClick={() => setShowComparisonModal(true)} 
+            className="premium-button px-4 py-2 rounded-md font-medium"
+          >
+            Trends
+          </button>
+          <button 
             onClick={() => setShowModal(true)} 
             className={`premium-button px-4 py-2 rounded-md font-medium relative ${
               activeAlerts.length > 0 ? 'border-red-500 text-red-400 hover:bg-red-900' : ''
             }`}
           >
             Alerts
-            {activeAlerts.length > 0 && (
-              <span className="alert-badge">{activeAlerts.length}</span>
-            )}
+            {activeAlerts.length > 0 && <span className="alert-badge">{activeAlerts.length}</span>}
           </button>
         </div>
 
